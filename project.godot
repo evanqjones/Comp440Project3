@@ -14,6 +14,7 @@ config_version=5
 
 config/name="Comp440Project3"
 config/features=PackedStringArray("4.7")
+run/main_scene="res://scenes/school_blockout_preview.tscn"
 
 [rendering]
 
