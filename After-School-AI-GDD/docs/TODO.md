@@ -1,0 +1,56 @@
+# Backlog
+
+Items marked **DECISION** require human/team agreement before they can be made final. Owners may prototype behind exported settings while waiting, but must label the setting provisional.
+
+## Foundation
+
+- [ ] **Zion/team:** translate `docs/MAP_RECREATION.md` into room/door IDs and a traversable graybox; preserve the supplied relative placements and mark unresolved door/layout ambiguities for review.
+- [ ] **DECISION — Team:** choose integration owner for root scene/project settings/shared wiring.
+- [ ] **DECISION — Team:** pin exact Godot 4 minor version, renderer/export targets, repository layout, and test workflow after inspecting repo.
+- [ ] **DECISION — Team:** confirm whether belongings must be collected in sequence or may be collected out of order.
+- [ ] **DECISION — Team:** define whether keys become a checkpoint/progress flag and what persists on the Nurse Office fallback checkpoint.
+
+## Milestone 1 — Playable traversal
+
+- [ ] **Rhaiyn:** third-person walking, horizontal camera, collision-aware view.
+- [ ] **Rhaiyn:** sprint/stamina loop and input settings (after provisional/default policy set).
+- [ ] **Zion:** Nurse Office spawn, Main Office key placement, room/door data, start route traversable.
+- [ ] **Zion:** locked/open door behavior, permanent-open invariant, successful open event/noise.
+- [ ] **Rhaiyn/Zion:** interaction target and prompt wired through public request API.
+
+## Milestone 2 — Items and checkpoints
+
+- [ ] **Zion:** six specified item placements and objective progression.
+- [ ] **Rhaiyn:** top-left minimap, objective display, item markers; no monster marker/data.
+- [ ] **Zion/team DECISION:** finalize checkpoint fields, key treatment, restore Bell phase/timer, and monster reset behavior.
+- [ ] **Zion/Rhaiyn:** save latest item checkpoint; capture → jumpscare → restore world/player in a single guarded flow.
+- [ ] **Zion:** final exit gated until all belongings complete.
+
+## Milestone 3 — Monster stalking
+
+- [ ] **Evan:** patrol across valid school paths; closed doors block; open doors connect.
+- [ ] **Evan:** receive noise events, orient/investigate nearby loud sources, enter short chase on POV.
+- [ ] **Evan:** offscreen-only stalking relocation and candidate visibility rejection.
+- [ ] **Evan:** approximately 10% flicker target on spotting, with relocation concealment only sometimes.
+- [ ] **DECISION — Evan/team:** sound radii/probabilities, patrol/relocation cadence, FOV, proximity capture, short chase timeout/escape rules.
+
+## Milestone 4 — Bell chase
+
+- [ ] **Zion:** authoritative Bell state, 10-second start, +2 seconds by progression, indefinite final Bell.
+- [ ] **DECISION — Zion/team:** Bell first-trigger/cadence and progression step mapping.
+- [ ] **Zion:** random eligible active safe-room selection and consistent publication.
+- [ ] **DECISION — Zion/team:** safe-room count, eligibility, reselection, and occupied-room behavior.
+- [ ] **Zion:** normal blue/yellow and Bell red lighting modes; active safe rooms remain visibly distinct.
+- [ ] **Evan:** Bell chase pathfinds to player, slightly above sprint, no teleport, avoids active safe rooms.
+- [ ] **Rhaiyn:** Bell objective/safe-room cue and transition presentation.
+
+## Milestone 5 — Finish and tune
+
+- [ ] **Team:** basic event audio for walking/sprinting/door/item/Bell/jumpscare.
+- [ ] **Team:** successful final exit ends game and communicates victory.
+- [ ] **Team:** agree exact tuning table values after playable feedback; update GAME_SPEC and DECISIONS.
+- [ ] **Team:** verify restart consistency, door/nav interactions, safe-room protection, and minimap privacy in full game.
+
+## Deferred / not approved
+
+- Menus, pause, save-to-disk, multiple endings, extra objectives, or new monster abilities: not in approved scope.
