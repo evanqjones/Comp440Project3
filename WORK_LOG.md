@@ -70,3 +70,10 @@ This log records the school-model and Godot-preview work completed with the user
 - Added a preview Bell chase mode at a provisional 6.5 m/s, faster than the current 5.5 m/s player sprint.
 - The preview Z toggle now enables/disables the Bell chase along with its red lighting/status. The monster moves toward the player with collision response; it does not pathfind, obey safe-room rules, capture, or reset the player.
 - Added the provisional speed and preview limitations to `GODOT_SCHOOL_PREVIEW.md` and Evan's progress handoff.
+
+## Monster Bell pathfinding (2026-10-07)
+
+- Added runtime navigation-mesh baking from the school's generated wall/floor collision geometry. Bell pursuit refreshes its target during movement and follows the path instead of moving directly through walls.
+- Added provisional clearance settings and dynamically narrows/lowers the monster capsule and visual in tight doorway gaps.
+- The blockout has no authoritative door-state or safe-room data; pathfinding currently uses its modeled doorway gaps. Closed/locked door behavior awaits School's live door-state integration. No capture behavior was added.
+- Live Godot check: navigation baked 325 polygons and produced a 7-point route from the Lobby-side monster spawn to the Nurse Office player start. The preview Z toggle entered `BELL_CHASE` at 6.5 m/s.

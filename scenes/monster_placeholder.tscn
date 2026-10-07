@@ -28,3 +28,9 @@ shape = SubResource("CapsuleShape3D_monster")
 position = Vector3(0, 1.5, 0)
 mesh = SubResource("CapsuleMesh_monster")
 surface_material_override/0 = SubResource("Material_monster")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.5
+target_desired_distance = 0.5
+path_max_distance = 1.0
+avoidance_enabled = false
