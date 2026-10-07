@@ -1,7 +1,7 @@
 extends Node3D
 
-@export_range(4.0, 20.0, 0.5) var sight_distance: float = 6.0
-@export_range(1.0, 8.0, 0.25) var sight_half_width: float = 2.25
+@export_range(2.0, 20.0, 0.5) var sight_distance: float = 3.0
+@export_range(0.5, 8.0, 0.125) var sight_half_width: float = 1.125
 
 func _ready() -> void:
     _create_opaque_search_cone()
