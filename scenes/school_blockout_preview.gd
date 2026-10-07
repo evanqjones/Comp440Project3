@@ -105,6 +105,7 @@ func _apply_bell_debug_state() -> void:
     preview_environment.environment.ambient_light_color = BELL_AMBIENT if _bell_debug_active else NORMAL_AMBIENT
     preview_light.light_color = Color(1.0, 0.12, 0.16) if _bell_debug_active else Color.WHITE
     bell_status.text = "BELL DEBUG: ON (Z)" if _bell_debug_active else "BELL DEBUG: OFF (Z)"
+    monster.call("set_preview_bell_active", _bell_debug_active)
 
 func _find_room_floor(node: Node, room_name: String) -> MeshInstance3D:
     if node is MeshInstance3D and node.name.to_lower().contains(room_name):

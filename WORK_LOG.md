@@ -64,3 +64,9 @@ This log records the school-model and Godot-preview work completed with the user
 
 - Lowered player walk/sprint speeds to provisional 3.5/5.5 m/s. Shift selects sprint speed.
 - Lowered monster patrol/chase speeds to provisional 0.5/4.5 m/s, keeping short chase faster than walking and slower than sprint.
+
+## Bell chase speed (2026-10-07)
+
+- Added a preview Bell chase mode at a provisional 6.5 m/s, faster than the current 5.5 m/s player sprint.
+- The preview Z toggle now enables/disables the Bell chase along with its red lighting/status. The monster moves toward the player with collision response; it does not pathfind, obey safe-room rules, capture, or reset the player.
+- Added the provisional speed and preview limitations to `GODOT_SCHOOL_PREVIEW.md` and Evan's progress handoff.
