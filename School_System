@@ -1,0 +1,70 @@
+# After School — School System
+
+This branch, **School_System**, includes a runnable School foundation and Bell demo.
+
+![School System demo running in Godot](school_system_demo.png)
+
+## Run the changes in Godot
+
+1. Check out `School_System` and pull its latest changes.
+2. Import/open this repository's `project.godot` in Godot 4 (tested with 4.7.2).
+3. Press **F5 / Run Project**. The main scene is now `scenes/school_system_demo.tscn`.
+4. You should see **AFTER SCHOOL | School System Demo** at the top left and start in the entrance lobby.
+
+Use **WASD** to walk, **mouse** to look, and **Escape** to release/capture the mouse. The existing player controller is reused without changes.
+
+The overlay identifies your current room and changes from **Bell quiet** to **BELL ACTIVE** when the Bell starts. Demo waits are randomized between 5–10 seconds and the Bell lasts 4 seconds. There is no next-Bell countdown. Press **P** to increase simulated objective progress, up to six, and **R** to reset it. Higher progress shortens future waits; the already scheduled wait finishes unchanged. These are demo controls, not an inventory or objective system. Bell state also prints in Godot Output; there is no Bell audio yet.
+
+## What was added
+
+### New: Monster environment support and room challenges
+
+- **48 categorized stalking points** in rooms, halls, corners/intersections, and doorways; physical AStar paths and exported connectivity for Monster consumers.
+- **Library maze:** solid shelf partitions, ordered checkpoint route, a book reward hook, and capture/reset support. Follow the checkpoint beacons; E collects or retries.
+- **Science lab:** enter through Classroom 103. Move while looking away; moving while watched resets the attempt. Return to its start and press E to retry. Reach the coat and press E during look-away.
+- **N** toggles 3D navigation/stalking debug; **V** cycles a live route to library, lab, or entrance; **C** simulates a capture report for testing.
+- **Configurable layout:** open `assets/school_layout.tres` or SchoolFoundation's Layout resource to tune dimensions, room rectangles, doors, partitions, and event anchors; restart after editing.
+
+The science-lab demo uses an explicitly labeled **SIMULATED watch signal** and a red/green lamp. Real Monster detection/capture connects through School event hooks; no Monster movement, targeting, state machine, or teleport logic was added. Book/coat are prototype reward hooks, not the full inventory/checkpoint system.
+
+![Library maze and navigation inspection](library_room_demo.png)
+![Science lab watch challenge](science_lab_demo.png)
+
+See [Monster-facing APIs and room-event manual tests](SCHOOL_MONSTER_SUPPORT.md).
+
+- **School world:** three classrooms, a larger library with two doors, connected hallways with corners and a loop, and one entrance/exit. Solid walls, ceilings, and door frames provide collision and block sight.
+- **Room identification:** ten stable room/hall IDs, world-position lookup, optional player tracking, and room-change signals.
+- **Monster integration data:** 48 valid stalking points and physical waypoint paths through open doorways. The School supplies locations/routes; Monster selection, visibility checks, and movement are not implemented.
+- **Bell scheduler:** configurable minimum/maximum interval, duration, randomized scheduling, read-only active state, and exactly one typed notification per start/end.
+- **Progress pressure:** objective progress reduces both future interval bounds while preserving random timing.
+- **Visible integration:** F5 launches the School demo with the existing player, current-room display, Bell state display, and progress test controls.
+
+This small graybox is a provisional foundation, separate from the earlier Blender school model. To view the earlier imported school, open `scenes/school_blockout_preview.tscn` and press **F6**. Doorways in the foundation are permanently open; door interactions, Monster behavior, final escape, safe rooms, inventory, minimap, and advanced audio are not implemented.
+
+## Files and public interfaces
+
+| Files | Purpose |
+| --- | --- |
+| `scenes/school_system_demo.tscn`, `.gd` | Launch scene and demo-only integration/status display |
+| `scenes/school_foundation.tscn`, `scripts/school/school_foundation.gd` | Geometry, room IDs, tracking, stalking records, physical path graph |
+| `scenes/school_bell.tscn`, `scripts/school/school_bell.gd` | Independent School-owned Bell scheduler |
+| `tests/school_foundation_test.gd`, `tests/school_bell_test.gd` | Automated physics/navigation and Bell transition checks |
+
+School queries: `get_room_ids`, `get_room_id_at`, `set_player_target`, `get_current_room_id`, `player_room_changed`, `get_stalking_locations`, `get_door_connections`, `get_traversable_path`, and `get_entrance_position`.
+
+Bell interface: `bell_active`, `bell_state_changed(snapshot)`, `get_bell_snapshot`, `set_objective_progress`, `get_interval_bounds`, `start_scheduling`, and `stop_scheduling`. Integration forwards objective counts and connects consumers; the scheduler does not control Player UI or Monster movement.
+
+See [School foundation documentation](SCHOOL_FOUNDATION.md) and [Bell documentation](SCHOOL_BELL.md) for signatures, limits, and detailed manual tests. Production timing defaults remain 30–60 seconds / 10-second duration; only the demo instance overrides them.
+
+## Test
+
+Using your Godot executable:
+
+```text
+godot --headless --path . --script res://tests/school_foundation_test.gd
+godot --headless --path . --script res://tests/school_bell_test.gd
+godot --headless --path . --script res://tests/school_demo_test.gd
+godot --headless --path . --script res://tests/school_room_events_test.gd
+```
+
+For a manual check, press F5, walk from the entrance through the hallways into the classrooms/library/lab, confirm the room display changes, and watch at least two Bell cycles. Press P six times and confirm later quiet intervals shorten, with no countdown. The foundation test verifies all 48 locations and 147 unique capsule-swept route segments; the Bell tests cover exact-once transitions, progress scaling, cancellation, pause, and real engine processing. See the Monster support handoff for room challenge and route-inspection steps.
