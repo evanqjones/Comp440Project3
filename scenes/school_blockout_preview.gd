@@ -20,10 +20,38 @@ func _ready() -> void:
     _load_school_model()
     if generate_school_collision:
         _add_school_collisions(school)
+    _build_school_navigation()
+    await get_tree().physics_frame
+    await get_tree().physics_frame
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
     _apply_bell_debug_state()
+
+func _build_school_navigation() -> void:
+    var region := NavigationRegion3D.new()
+    region.name = "MonsterNavigation"
+    var nav_mesh := NavigationMesh.new()
+    nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
+    nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+    nav_mesh.geometry_collision_mask = 1
+    nav_mesh.agent_radius = 0.1
+    nav_mesh.agent_height = 1.8
+    nav_mesh.agent_max_climb = 0.2
+    nav_mesh.cell_size = 0.1
+    nav_mesh.cell_height = 0.1
+    nav_mesh.sample_partition_type = NavigationMesh.SAMPLE_PARTITION_MONOTONE
+    region.navigation_mesh = nav_mesh
+    var school_transform := school.global_transform
+    remove_child(school)
+    add_child(region)
+    region.add_child(school)
+    school.global_transform = school_transform
+    NavigationServer3D.map_set_cell_size(region.get_navigation_map(), nav_mesh.cell_size)
+    NavigationServer3D.map_set_cell_height(region.get_navigation_map(), nav_mesh.cell_height)
+    region.bake_navigation_mesh(false)
+    if region.navigation_mesh.get_polygon_count() == 0:
+        push_error("Monster navigation mesh bake produced no walkable polygons.")
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
