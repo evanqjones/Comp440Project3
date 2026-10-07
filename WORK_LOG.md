@@ -41,3 +41,11 @@ This log records the school-model and Godot-preview work completed with the user
 - Placeholder movement/camera script: `scenes/player_placeholder.gd`.
 - Existing PlayerSystem script: `scripts/player_system.gd` (separate; unchanged during this work).
 - Gameplay systems remain follow-up work under the owner boundaries and open decisions in `After-School-AI-GDD/docs/AGENTS.md` and the related design docs.
+
+## Monster searchlight and Bell preview (2026-10-07)
+
+- Created `scenes/monster_placeholder.tscn` and its script with a dark 3 m capsule and an opaque yellow triangular search cone (10 m forward distance, 3.75 m half-width). The cone is a visual line-of-sight aid; it does not perform occlusion or detection checks.
+- Added the stationary monster to the school preview near the Lobby and oriented its cone toward the player start. It has no collision, movement, capture, or player-reset behavior, so contact has no effect.
+- Bound **Z** in the preview scene to toggle a visible Bell debug status and red preview background/ambient/key light. This does not implement the authoritative School Bell timer, safe-room selection, or cross-system state.
+- Reversed the generated cone triangle winding after Godot mesh validation identified it; the cone no longer appears in the validation findings. The validator still reports pre-existing zero-area UV warnings on room-label meshes.
+- Verified the preview runs and the Z toggle switches between OFF/normal and ON/red states.
