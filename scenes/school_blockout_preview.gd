@@ -22,6 +22,7 @@ func _ready() -> void:
         _add_school_collisions(school)
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
+    monster.set_player_target(player)
     _apply_bell_debug_state()
 
 func _unhandled_input(event: InputEvent) -> void:
