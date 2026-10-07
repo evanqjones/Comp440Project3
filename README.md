@@ -17,9 +17,24 @@ The overlay identifies your current room and changes from **Bell quiet** to **BE
 
 ## What was added
 
+### New: Monster environment support and room challenges
+
+- **48 categorized stalking points** in rooms, halls, corners/intersections, and doorways; physical AStar paths and exported connectivity for Monster consumers.
+- **Library maze:** solid shelf partitions, ordered checkpoint route, a book reward hook, and capture/reset support. Follow the checkpoint beacons; E collects or retries.
+- **Science lab:** enter through Classroom 103. Move while looking away; moving while watched resets the attempt. Return to its start and press E to retry. Reach the coat and press E during look-away.
+- **N** toggles 3D navigation/stalking debug; **V** cycles a live route to library, lab, or entrance; **C** simulates a capture report for testing.
+- **Configurable layout:** open `assets/school_layout.tres` or SchoolFoundation's Layout resource to tune dimensions, room rectangles, doors, partitions, and event anchors; restart after editing.
+
+The science-lab demo uses an explicitly labeled **SIMULATED watch signal** and a red/green lamp. Real Monster detection/capture connects through School event hooks; no Monster movement, targeting, state machine, or teleport logic was added. Book/coat are prototype reward hooks, not the full inventory/checkpoint system.
+
+![Library maze and navigation inspection](library_room_demo.png)
+![Science lab watch challenge](science_lab_demo.png)
+
+See [Monster-facing APIs and room-event manual tests](SCHOOL_MONSTER_SUPPORT.md).
+
 - **School world:** three classrooms, a larger library with two doors, connected hallways with corners and a loop, and one entrance/exit. Solid walls, ceilings, and door frames provide collision and block sight.
-- **Room identification:** nine stable room/hall IDs, world-position lookup, optional player tracking, and room-change signals.
-- **Monster integration data:** 37 valid stalking points and physical waypoint paths through open doorways. The School supplies locations/routes; Monster selection, visibility checks, and movement are not implemented.
+- **Room identification:** ten stable room/hall IDs, world-position lookup, optional player tracking, and room-change signals.
+- **Monster integration data:** 48 valid stalking points and physical waypoint paths through open doorways. The School supplies locations/routes; Monster selection, visibility checks, and movement are not implemented.
 - **Bell scheduler:** configurable minimum/maximum interval, duration, randomized scheduling, read-only active state, and exactly one typed notification per start/end.
 - **Progress pressure:** objective progress reduces both future interval bounds while preserving random timing.
 - **Visible integration:** F5 launches the School demo with the existing player, current-room display, Bell state display, and progress test controls.
@@ -49,9 +64,10 @@ Using your Godot executable:
 godot --headless --path . --script res://tests/school_foundation_test.gd
 godot --headless --path . --script res://tests/school_bell_test.gd
 godot --headless --path . --script res://tests/school_demo_test.gd
+godot --headless --path . --script res://tests/school_room_events_test.gd
 ```
 
-For a manual check, press F5, walk from the entrance through the hallways into the classrooms/library, confirm the room display changes, and watch at least two Bell cycles. Press P six times and confirm later quiet intervals shorten, with no countdown. The previous foundation test verified all 37 locations and 123 unique capsule-swept route segments; the Bell tests cover exact-once transitions, progress scaling, cancellation, pause, and real engine processing.
+For a manual check, press F5, walk from the entrance through the hallways into the classrooms/library/lab, confirm the room display changes, and watch at least two Bell cycles. Press P six times and confirm later quiet intervals shorten, with no countdown. The foundation test verifies all 48 locations and 147 unique capsule-swept route segments; the Bell tests cover exact-once transitions, progress scaling, cancellation, pause, and real engine processing. See the Monster support handoff for room challenge and route-inspection steps.
 
 ---
 

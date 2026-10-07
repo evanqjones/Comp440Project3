@@ -2,6 +2,10 @@
 
 This log separates confirmed design from assistant-proposed implementation structure. Do not promote an **OPEN** item to confirmed without team agreement.
 
+## School prototype request — 2026-10-07
+
+The School owner explicitly requested environment-side Monster support plus a library maze/book event and a science-lab move-when-not-watched event in the running School_System demo. The owner confirmed that moving while watched resets the lab attempt. This authorizes the isolated School prototype, not a rewrite of the larger floorplan or shared inventory/checkpoint rules. The prototype resets event progress without repositioning actors; the player walks back to the start to retry. School receives watch/capture reports and publishes completion hooks. Real Monster perception, pursuit, relocation, and capture resolution remain Monster/Player responsibilities. New School extension APIs are documented in `../../SCHOOL_MONSTER_SUPPORT.md`; no frozen signatures change. Demo gaze is explicitly simulated; layout/timing values remain tunable prototypes.
+
 ## Confirmed design decisions
 
 | ID | Decision |

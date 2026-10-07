@@ -1,9 +1,15 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/school/school_foundation.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/school_bell.tscn" id="2"]
+[ext_resource type="Script" path="res://scripts/school/school_room_events.gd" id="3"]
+[ext_resource type="Resource" path="res://assets/school_layout.tres" id="4"]
 
 [node name="SchoolFoundation" type="Node3D"]
 script = ExtResource("1")
+layout = ExtResource("4")
 
 [node name="SchoolBell" parent="." instance=ExtResource("2")]
+
+[node name="RoomEvents" type="Node3D" parent="."]
+script = ExtResource("3")

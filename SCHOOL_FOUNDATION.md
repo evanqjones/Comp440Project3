@@ -1,8 +1,10 @@
 # School System foundation
 
+The current foundation includes a configurable library maze, science lab, categorized markers, and room events. See [School Monster support](SCHOOL_MONSTER_SUPPORT.md) for the latest configuration, debug controls, and event APIs.
+
 Press F5 to run `scenes/school_system_demo.tscn`, which instances this foundation with the existing player and a demo-only room/Bell status overlay. Open `scenes/school_foundation.tscn` separately in Godot's 3D editor to inspect the graybox. Its tool script generates geometry in the editor and at runtime. The foundation service has no player movement, camera, Monster, UI, inventory, or audio logic. The separate SchoolBell child provides the scheduler described in [SCHOOL_BELL.md](SCHOOL_BELL.md). The earlier imported-model preview remains available via F6 on `scenes/school_blockout_preview.tscn`.
 
-This is the small provisional layout requested for the foundation, not a replacement for `assets.blend`, its GLB, or the larger documented floorplan. All six internal doorways and the exterior doorway are permanently open in this slice. Door interactions/locks and progression remain future work; no existing frozen contract is changed. Placeholder dimensions and topology live in `_build()` and the constants in `scripts/school/school_foundation.gd`.
+This is the small provisional layout requested for the foundation, not a replacement for `assets.blend`, its GLB, or the larger documented floorplan. All seven internal doorways and the exterior doorway are permanently open in this slice. Door interactions/locks and full progression remain future work; no existing frozen contract is changed. Placeholder dimensions and topology are configured through `assets/school_layout.tres`, using defaults in `scripts/school/school_layout.gd`.
 
 ## Layout and stable IDs
 
@@ -11,6 +13,7 @@ This is the small provisional layout requested for the foundation, not a replace
 - `classroom_101`, `classroom_102`, `classroom_103`: three 8 × 8 m classrooms.
 - `library`: 12 × 8 m room, with south and east doors providing another route.
 - `entrance`: 4 × 4 m lobby and the only exterior opening, `exit_main`.
+- `science_lab`: 8 × 8 m room reached through Classroom 103, with a stand-still-while-watched event.
 
 Interior door IDs: `door_101`, `door_102`, `door_103`, `door_library_south`, `door_library_east`, `door_lobby`. Walls are 0.2 m thick and 3.2 m high, door openings 2 m wide and 2.5 m high. Floors, ceilings, jambs, and lintels have collision on layer 1. Solid room boundaries and corridor turns block sight naturally; this does not depend on renderer occlusion culling. Simple labels and warm lights identify the placeholder spaces.
 
@@ -20,12 +23,12 @@ Call after the scene is ready. Positions are world-space, feet on the floor. Roo
 
 | API | Result / meaning |
 | --- | --- |
-| `get_room_ids() -> Array[StringName]` | Nine stable room/hall IDs. |
+| `get_room_ids() -> Array[StringName]` | Ten stable room/hall IDs. |
 | `get_room_id_at(world_position: Vector3) -> StringName` | Canonical School room query. Empty outside the floorplan/vertical bounds. Half-open bounds assign thresholds deterministically; this is a spatial region query, not a collision test. |
 | `set_player_target(player: Node3D) -> void` | Optional binding to any existing player; pass null to unbind. Does not move or modify the actor. |
 | `get_current_room_id() -> StringName` | Bound actor's room, refreshed each physics tick; empty for missing/freed actor or outside. |
 | `player_room_changed(previous_room: StringName, current_room: StringName)` | Emitted only when tracked room changes. |
-| `get_stalking_locations(room_id: StringName = &"") -> Array[Dictionary]` | Copied records `{id: StringName, room_id: StringName, position: Vector3}`; empty filter means all 37 locations, unknown room returns empty. IDs use `stalk_<room>_<grid_x>_<grid_z>`. |
+| `get_stalking_locations(room_id: StringName = &"") -> Array[Dictionary]` | Copied records `{id: StringName, room_id: StringName, position: Vector3, tags: Array[StringName]}`; empty filter means all 48 locations, unknown room returns empty. Existing IDs use `stalk_<room>_<grid_x>_<grid_z>`; new doorway markers use `stalk_<door_id>`. |
 | `get_door_connections() -> Array[Dictionary]` | Copied records `{id, room_a, room_b, position, open, cell_a, cell_b}`. IDs are StringName, position Vector3, open bool, cells Vector2i. Exit has room_b `outside`. |
 | `get_traversable_path(from_world: Vector3, to_world: Vector3) -> PackedVector3Array` | Ordered world-space floor waypoints, including endpoints. Empty for invalid/unreachable endpoints. Follow every segment; do not skip corners or smooth through walls. |
 | `get_entrance_position() -> Vector3` | Interior lobby floor spawn/integration anchor. Does not trigger victory. |
@@ -44,7 +47,7 @@ var route: PackedVector3Array = school.get_traversable_path(
 
 ## Verification and manual steps
 
-Automated: run Godot with `--headless --path . --script res://tests/school_foundation_test.gd`. Checks cover all-pairs candidate reachability, swept 0.35 m radius / 2.2 m height capsule clearance on unique path segments, room IDs, wall occlusion, invalid endpoints, actor tracking/removal, and translated/rotated queries. Expected: 37 locations, zero failures.
+Automated: run Godot with `--headless --path . --script res://tests/school_foundation_test.gd`. Checks cover all-pairs candidate reachability, swept 0.35 m radius / 2.2 m height capsule clearance on unique path segments, room IDs, wall occlusion, invalid endpoints, actor tracking/removal, and translated/rotated queries. Expected: 48 locations, 147 unique segments, zero failures. The extended suite also checks configurable dimensions, live-target path queries, and maze detours.
 
 1. Open the foundation scene in the 3D editor; inspect the main spine, T intersection, loop, three classrooms, two library doorways, and single exterior doorway. Editor fly navigation can enter below the ceilings; the standalone scene intentionally has no game camera.
 2. For a walking test, create an unsaved test scene and instance the foundation plus the **existing** `scenes/player_placeholder.tscn`. Set the player's position to `(26, 0.05, 26)`. Run that test scene; use its existing WASD/mouse controls. No Player files need editing.

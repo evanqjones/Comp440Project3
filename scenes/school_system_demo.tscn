@@ -71,4 +71,12 @@ text = "Test progress: 0 / 6  |  P: advance  R: reset"
 [node name="Controls" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
 text = "WASD: walk  |  Mouse: look  |  Esc: release mouse\nExplore the classrooms, library, and hallway loop."
 
+[node name="Challenge" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+theme_override_font_sizes/font_size = 14
+text = "School room challenges"
+
+[node name="Route" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+theme_override_font_sizes/font_size = 14
+text = "N: navigation debug | V: change route destination"
+
 [editable path="SchoolFoundation"]
