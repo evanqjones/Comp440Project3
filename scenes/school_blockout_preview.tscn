@@ -16,6 +16,7 @@ script = ExtResource("1_script")
 [node name="School" type="Node3D" parent="."]
 
 [node name="PlayerPlaceholder" parent="." instance=ExtResource("2_player")]
+scale = Vector3(0.8, 0.8, 0.8)
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_preview")
