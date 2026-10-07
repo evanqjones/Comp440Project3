@@ -28,6 +28,9 @@ This log records the school-model and Godot-preview work completed with the user
 - Updated `GODOT_SCHOOL_PREVIEW.md` with the main-scene, capsule, and camera reference details.
 - Created and pushed branch `feature/locker-room-one-way-door`. Commits: `114794a` (school blockout, preview, one-way Locker Room door) and `41383a6` (main-scene assignment and preview note).
 - Godot MCP confirmed the configured main scene and launched the project. This confirms the preview starts; it does not verify gameplay door behavior.
+- On 2026-10-07, scaled the player instance in `scenes/school_blockout_preview.tscn` to 0.8 for the school blockout. Left `scenes/player_placeholder.tscn` and its movement/camera values unchanged; reloaded and ran the preview.
+- On 2026-10-07, shortened the school preview instance's camera distance to 3.5 m (2.8 m at its 0.8 scale), leaving the reusable player scene unchanged; reloaded and ran the preview.
+- On 2026-10-07, expanded the Auditorium 4 m north in Blender. Kept the south entrance fixed, extended the floor and east/west walls, moved the north wall, added matching roof/ceiling coverage, and recentered the room label. Re-exported the GLB, reimported it in Godot, and launched the preview.
 
 ## Current handoff
 
