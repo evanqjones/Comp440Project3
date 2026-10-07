@@ -44,7 +44,8 @@ This log records the school-model and Godot-preview work completed with the user
 
 ## Monster searchlight and Bell preview (2026-10-07)
 
-- Created `scenes/monster_placeholder.tscn` and its script with a dark 3 m capsule and an opaque yellow triangular search cone (10 m forward distance, 3.75 m half-width). The cone is a visual line-of-sight aid; it does not perform occlusion or detection checks.
+- Created `scenes/monster_placeholder.tscn` and its script with a dark 3 m capsule and an opaque yellow triangular search cone. The cone is a visual line-of-sight aid; it does not perform occlusion or detection checks.
+- Shortened the search cone to a 6 m forward distance and 2.25 m half-width, preserving its original angle.
 - Added the stationary monster to the school preview near the Lobby and oriented its cone toward the player start. It has no collision, movement, capture, or player-reset behavior, so contact has no effect.
 - Bound **Z** in the preview scene to toggle a visible Bell debug status and red preview background/ambient/key light. This does not implement the authoritative School Bell timer, safe-room selection, or cross-system state.
 - Reversed the generated cone triangle winding after Godot mesh validation identified it; the cone no longer appears in the validation findings. The validator still reports pre-existing zero-area UV warnings on room-label meshes.
