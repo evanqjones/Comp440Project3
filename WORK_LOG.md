@@ -53,3 +53,8 @@ This log records the school-model and Godot-preview work completed with the user
 - Bound **Z** in the preview scene to toggle a visible Bell debug status and red preview background/ambient/key light. This does not implement the authoritative School Bell timer, safe-room selection, or cross-system state.
 - Reversed the generated cone triangle winding after Godot mesh validation identified it; the cone no longer appears in the validation findings. The validator still reports pre-existing zero-area UV warnings on room-label meshes.
 - Verified the preview runs and the Z toggle switches between OFF/normal and ON/red states.
+
+## Monster hallway patrol (2026-10-07)
+
+- Changed the monster placeholder into a colliding `CharacterBody3D` and added a slow, reversible patrol along a short hallway-side route. Patrol speed and span remain provisional tuning values.
+- Moved its preview spawn from the Lobby entrance side toward the Classroom D connection. Patrol remains preview-only; room/door pathfinding, Bell chase, noise response, and capture await School/Player interfaces.

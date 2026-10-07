@@ -4,7 +4,7 @@ extends Node3D
 
 @onready var school: Node3D = $School
 @onready var player: CharacterBody3D = $PlayerPlaceholder
-@onready var monster: Node3D = $MonsterPlaceholder
+@onready var monster: CharacterBody3D = $MonsterPlaceholder
 @onready var preview_environment: WorldEnvironment = $WorldEnvironment
 @onready var preview_light: DirectionalLight3D = $PreviewLight
 @onready var bell_status: Label = $DebugOverlay/BellStatus
@@ -21,7 +21,7 @@ func _ready() -> void:
     if generate_school_collision:
         _add_school_collisions(school)
     _place_player_at_nurse_office()
-    _place_monster_near_lobby()
+    _place_monster_deeper_in_hallway()
     _apply_bell_debug_state()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -71,31 +71,33 @@ func _place_player_at_nurse_office() -> void:
     else:
         player.position = Vector3(38.6, 0.14, 28.35)
 
-func _place_monster_near_lobby() -> void:
+func _place_monster_deeper_in_hallway() -> void:
     var lobby_floor: MeshInstance3D = _find_room_floor(school, "lobby floor")
     if lobby_floor == null or lobby_floor.mesh == null:
-        monster.global_position = player.global_position + Vector3(-4.0, 0.0, 0.0)
-        monster.look_at(Vector3(player.global_position.x, monster.global_position.y, player.global_position.z), Vector3.UP)
+        monster.global_position = player.global_position + Vector3(-8.0, 0.0, -3.0)
+        monster.start_preview_hallway_patrol(Vector3.RIGHT)
         return
 
     var bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
     var center := bounds.position + bounds.size * 0.5
-    var direction := player.global_position - center
+    var inner_room_floor: MeshInstance3D = _find_room_floor(school, "classroom d floor")
+    var inner_target := center + Vector3(-2.0, 0.0, -3.0)
+    if inner_room_floor != null and inner_room_floor.mesh != null:
+        var inner_bounds: AABB = inner_room_floor.global_transform * inner_room_floor.mesh.get_aabb()
+        inner_target = inner_bounds.position + inner_bounds.size * 0.5
+    var direction := inner_target - center
     direction.y = 0.0
     if direction.length_squared() > 0.001:
         direction = direction.normalized()
     else:
-        direction = Vector3.FORWARD
+        direction = Vector3(0.0, 0.0, -1.0)
 
     monster.global_position = Vector3(
-        center.x + direction.x * 7.0,
+        center.x + direction.x * 2.5,
         bounds.position.y + bounds.size.y,
-        center.z + direction.z * 7.0
+        center.z + direction.z * 2.5
     )
-    var look_target := player.global_position
-    look_target.y = monster.global_position.y
-    if monster.global_position.distance_squared_to(look_target) > 0.001:
-        monster.look_at(look_target, Vector3.UP)
+    monster.start_preview_hallway_patrol(Vector3.RIGHT)
 
 func _apply_bell_debug_state() -> void:
     preview_environment.environment.background_color = BELL_BACKGROUND if _bell_debug_active else NORMAL_BACKGROUND
