@@ -14,10 +14,12 @@ const NORMAL_BACKGROUND := Color(0.055, 0.07, 0.1, 1.0)
 const NORMAL_AMBIENT := Color(0.55, 0.62, 0.75, 1.0)
 const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
+const PREVIEW_RELOCATION_INTERVAL := 10.0
 
 var _bell_debug_active := false
 var _spawn_markers: Array[Node3D] = []
 var _spawn_marker_nodes_visible := true
+var _preview_relocation_elapsed := 0.0
 
 func _ready() -> void:
     _load_school_model()
@@ -32,6 +34,15 @@ func _ready() -> void:
     monster.set_player_target(player)
     _create_monster_spawn_locations()
     _apply_bell_debug_state()
+
+func _process(delta: float) -> void:
+    if _bell_debug_active or monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE":
+        return
+    _preview_relocation_elapsed += delta
+    if _preview_relocation_elapsed < PREVIEW_RELOCATION_INTERVAL:
+        return
+    _preview_relocation_elapsed = 0.0
+    _try_debug_offscreen_relocation()
 
 func _wait_for_navigation_map() -> void:
     var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
@@ -155,7 +166,7 @@ func _create_monster_spawn_locations() -> void:
         if _position_in_excluded_floor(closest_nav_point, excluded_floor_names):
             continue
         _spawn_markers.append(_make_spawn_panel(candidate, closest_nav_point))
-    spawn_help.text = "Spawn panels: %d   M: toggle   X: offscreen relocation (Bell blocks it)" % _spawn_markers.size()
+    spawn_help.text = "Spawn panels: %d   Auto relocate: 10s while not chasing   M: toggle   X: test" % _spawn_markers.size()
 
 func _make_spawn_panel(candidate: Dictionary, spawn_position: Vector3) -> Node3D:
     var marker := Node3D.new()
