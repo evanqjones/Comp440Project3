@@ -4,6 +4,9 @@ extends CharacterBody3D
 @export_range(0.125, 8.0, 0.03125) var sight_half_width: float = 1.125
 @export_range(0.1, 3.0, 0.1) var preview_patrol_speed: float = 0.5
 @export_range(0.25, 5.0, 0.25) var preview_patrol_half_length: float = 1.75
+@export_range(3.0, 60.0, 1.0) var preview_hallway_pace_seconds: float = 18.0
+@export_range(0.5, 20.0, 0.5) var preview_classroom_idle_seconds: float = 4.0
+@export_range(5.0, 60.0, 1.0) var preview_patrol_transfer_timeout: float = 25.0
 @export_range(0.1, 10.0, 0.1) var preview_short_chase_speed: float = 4.5
 @export_range(0.1, 15.0, 0.1) var preview_bell_chase_speed: float = 6.5
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
@@ -20,6 +23,15 @@ var _patrol_axis := Vector3.RIGHT
 var _patrol_progress := 0.0
 var _patrol_sign := 1.0
 var _patrol_active := false
+var _patrol_cycle_active := false
+var _patrol_room_positions: Array[Vector3] = []
+var _patrol_room_index := 0
+var _patrol_room_position := Vector3.ZERO
+var _patrol_hall_start := Vector3.ZERO
+var _patrol_hall_end := Vector3.ZERO
+var _patrol_cycle_phase: StringName = &""
+var _patrol_cycle_target := Vector3.ZERO
+var _patrol_cycle_elapsed := 0.0
 var _player_target: Node3D
 var _lost_sight_time := 0.0
 var _preview_bell_active := false
@@ -45,6 +57,7 @@ func start_preview_hallway_patrol(axis: Vector3) -> void:
     axis.y = 0.0
     if axis.length_squared() < 0.001:
         return
+    _patrol_cycle_active = false
     _patrol_axis = axis.normalized()
     _patrol_origin = global_position
     _patrol_progress = 0.0
@@ -53,10 +66,47 @@ func start_preview_hallway_patrol(axis: Vector3) -> void:
     current_state = &"PATROL"
     monster_state_changed.emit(current_state)
 
+func start_preview_room_hall_patrol(classroom_positions: Array[Vector3], hallway_start: Vector3, hallway_end: Vector3) -> void:
+    if classroom_positions.is_empty():
+        return
+    _patrol_cycle_active = true
+    _patrol_room_positions = classroom_positions
+    _patrol_hall_start = hallway_start
+    _patrol_hall_end = hallway_end
+    _patrol_active = true
+    _select_nearest_patrol_room(global_position)
+    _start_patrol_cycle_phase(&"MOVE_TO_ROOM", _patrol_room_position)
+    _set_state(&"PATROL")
+
+func _select_nearest_patrol_room(from_position: Vector3) -> void:
+    var nearest_distance := INF
+    for index in _patrol_room_positions.size():
+        var distance: float = from_position.distance_squared_to(_patrol_room_positions[index])
+        if distance < nearest_distance:
+            nearest_distance = distance
+            _patrol_room_index = index
+            _patrol_room_position = _patrol_room_positions[index]
+
+func _select_next_patrol_room() -> void:
+    if _patrol_room_positions.is_empty():
+        return
+    _patrol_room_index = (_patrol_room_index + 1) % _patrol_room_positions.size()
+    _patrol_room_position = _patrol_room_positions[_patrol_room_index]
+
+func _nearest_hallway_end(from_position: Vector3) -> Vector3:
+    return _patrol_hall_start if from_position.distance_squared_to(_patrol_hall_start) <= from_position.distance_squared_to(_patrol_hall_end) else _patrol_hall_end
+
+func _start_patrol_cycle_phase(phase: StringName, target: Vector3) -> void:
+    _patrol_cycle_phase = phase
+    _patrol_cycle_target = target
+    _patrol_cycle_elapsed = 0.0
+    if phase != &"ROOM_IDLE":
+        _navigation_agent.target_position = target
+
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
-func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D) -> bool:
+func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, spawn_id: StringName = &"") -> bool:
     # This is a manual preview hook. Production relocation timing/candidate choice
     # remains a stalking-system decision; Bell chase categorically rejects it.
     if _preview_bell_active or current_state != &"PATROL" or not is_instance_valid(player_camera):
@@ -72,7 +122,15 @@ func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3
         return false
     global_position = destination
     velocity = Vector3.ZERO
-    start_preview_hallway_patrol(_patrol_axis)
+    if _patrol_cycle_active:
+        _select_nearest_patrol_room(destination)
+        var destination_id := String(spawn_id)
+        if destination_id.begins_with("class_") or destination_id.begins_with("inside_class_"):
+            _start_patrol_cycle_phase(&"ROOM_IDLE", destination)
+        elif _patrol_cycle_phase == &"ROOM_IDLE" or _patrol_cycle_phase == &"MOVE_TO_ROOM":
+            _start_patrol_cycle_phase(&"MOVE_TO_ROOM", _patrol_room_position)
+    elif not _patrol_cycle_active:
+        start_preview_hallway_patrol(_patrol_axis)
     return true
 
 func _monster_body_visible_from_camera(base_position: Vector3, player_camera: Camera3D) -> bool:
@@ -206,6 +264,9 @@ func _side_clearance(ray_start: Vector3, direction: Vector3) -> float:
 func _update_patrol(delta: float) -> void:
     if not _patrol_active:
         return
+    if _patrol_cycle_active:
+        _update_room_hall_patrol(delta)
+        return
 
     var next_progress := _patrol_progress + _patrol_sign * preview_patrol_speed * delta
     if next_progress >= preview_patrol_half_length:
@@ -227,6 +288,62 @@ func _update_patrol(delta: float) -> void:
 
     var facing := _patrol_axis * _patrol_sign
     look_at(global_position + facing, Vector3.UP)
+
+func _update_room_hall_patrol(delta: float) -> void:
+    _patrol_cycle_elapsed += delta
+    match _patrol_cycle_phase:
+        &"MOVE_TO_ROOM":
+            if _move_toward_patrol_target(delta, true):
+                _start_patrol_cycle_phase(&"ROOM_IDLE", _patrol_room_position)
+            elif _patrol_cycle_elapsed >= preview_patrol_transfer_timeout:
+                _start_patrol_cycle_phase(&"MOVE_TO_HALLWAY", _nearest_hallway_end(global_position))
+        &"ROOM_IDLE":
+            velocity = Vector3.ZERO
+            move_and_slide()
+            _update_squeeze(Vector3.ZERO, delta)
+            if _patrol_cycle_elapsed >= preview_classroom_idle_seconds:
+                _start_patrol_cycle_phase(&"MOVE_TO_HALLWAY", _nearest_hallway_end(global_position))
+        &"MOVE_TO_HALLWAY":
+            if _move_toward_patrol_target(delta, true):
+                _start_patrol_cycle_phase(&"HALLWAY_PACE", _patrol_hall_end)
+            elif _patrol_cycle_elapsed >= preview_patrol_transfer_timeout:
+                _start_patrol_cycle_phase(&"HALLWAY_PACE", _patrol_hall_end)
+        &"HALLWAY_PACE":
+            if _patrol_cycle_elapsed >= preview_hallway_pace_seconds:
+                _select_next_patrol_room()
+                _start_patrol_cycle_phase(&"MOVE_TO_ROOM", _patrol_room_position)
+            elif _move_toward_patrol_target(delta):
+                var next_end := _patrol_hall_start if _patrol_cycle_target.distance_to(_patrol_hall_end) < 0.1 else _patrol_hall_end
+                _patrol_cycle_target = next_end
+                _navigation_agent.target_position = next_end
+
+func _move_toward_patrol_target(delta: float, force_squeeze: bool = false) -> bool:
+    if _navigation_agent.is_navigation_finished() and global_position.distance_to(_patrol_cycle_target) <= maxf(0.6, _navigation_agent.target_desired_distance + 0.1):
+        velocity = Vector3.ZERO
+        move_and_slide()
+        _update_squeeze(Vector3.ZERO, delta)
+        return true
+
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        _update_squeeze(Vector3.ZERO, delta)
+        return false
+
+    direction = direction.normalized()
+    velocity = direction * preview_patrol_speed
+    var centerline_is_clear := _is_centerline_clear(direction)
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
+    var squeezed_against_doorway := false
+    for collision_index in get_slide_collision_count():
+        if absf(get_slide_collision(collision_index).get_normal().y) < 0.5 and centerline_is_clear:
+            squeezed_against_doorway = true
+            break
+    _update_squeeze(direction, delta, force_squeeze or squeezed_against_doorway)
+    return _navigation_agent.is_navigation_finished() and global_position.distance_to(_patrol_cycle_target) <= maxf(0.6, _navigation_agent.target_desired_distance + 0.1)
 
 func _update_short_chase(delta: float) -> void:
     if not is_instance_valid(_player_target):

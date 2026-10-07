@@ -240,20 +240,20 @@ func _try_debug_offscreen_relocation() -> void:
     if hallway_first:
         hallway_markers.shuffle()
         for marker in hallway_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, StringName(marker.get_meta("spawn_id", ""))):
                 return
         other_markers.shuffle()
         for marker in other_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, StringName(marker.get_meta("spawn_id", ""))):
                 return
     else:
         other_markers.shuffle()
         for marker in other_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, StringName(marker.get_meta("spawn_id", ""))):
                 return
         hallway_markers.shuffle()
         for marker in hallway_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, StringName(marker.get_meta("spawn_id", ""))):
                 return
 
 func _load_school_model() -> void:
@@ -323,7 +323,25 @@ func _place_monster_deeper_in_hallway() -> void:
         bounds.position.y + bounds.size.y,
         center.z + direction.z * 2.5
     )
-    monster.start_preview_hallway_patrol(Vector3.RIGHT)
+    var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
+    var navigation_map: RID = navigation_agent.get_navigation_map()
+    var classroom_positions: Array[Vector3] = []
+    for floor_name in ["classroom a floor", "classroom c floor", "classroom d floor", "classroom e floor"]:
+        var classroom_floor: MeshInstance3D = _find_room_floor(school, floor_name)
+        if classroom_floor == null or classroom_floor.mesh == null:
+            continue
+        var classroom_bounds: AABB = classroom_floor.global_transform * classroom_floor.mesh.get_aabb()
+        var room_position := Vector3(
+            classroom_bounds.position.x + classroom_bounds.size.x * 0.5,
+            classroom_bounds.position.y + classroom_bounds.size.y,
+            classroom_bounds.position.z + classroom_bounds.size.z * 0.5
+        )
+        classroom_positions.append(NavigationServer3D.map_get_closest_point(navigation_map, room_position))
+    var hallway_start := Vector3(bounds.position.x + 2.5, bounds.position.y + bounds.size.y, center.z)
+    var hallway_end := Vector3(bounds.end.x - 7.0, bounds.position.y + bounds.size.y, center.z)
+    hallway_start = NavigationServer3D.map_get_closest_point(navigation_map, hallway_start)
+    hallway_end = NavigationServer3D.map_get_closest_point(navigation_map, hallway_end)
+    monster.start_preview_room_hall_patrol(classroom_positions, hallway_start, hallway_end)
 
 func _apply_bell_debug_state() -> void:
     preview_environment.environment.background_color = BELL_BACKGROUND if _bell_debug_active else NORMAL_BACKGROUND
