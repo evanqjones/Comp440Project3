@@ -5,6 +5,7 @@ extends CharacterBody3D
 @export_range(0.1, 3.0, 0.1) var preview_patrol_speed: float = 0.5
 @export_range(0.25, 5.0, 0.25) var preview_patrol_half_length: float = 1.75
 @export_range(0.1, 10.0, 0.1) var preview_short_chase_speed: float = 4.5
+@export_range(0.1, 15.0, 0.1) var preview_bell_chase_speed: float = 6.5
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
 
 signal monster_state_changed(state_id: StringName)
@@ -17,6 +18,7 @@ var _patrol_sign := 1.0
 var _patrol_active := false
 var _player_target: Node3D
 var _lost_sight_time := 0.0
+var _preview_bell_active := false
 
 func _ready() -> void:
     _create_opaque_search_cone()
@@ -36,7 +38,18 @@ func start_preview_hallway_patrol(axis: Vector3) -> void:
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
+func set_preview_bell_active(active: bool) -> void:
+    if _preview_bell_active == active:
+        return
+    _preview_bell_active = active
+    _lost_sight_time = 0.0
+    _set_state(&"BELL_CHASE" if active else &"PATROL")
+
 func _physics_process(delta: float) -> void:
+    if _preview_bell_active:
+        _update_bell_chase()
+        return
+
     if current_state == &"SHORT_CHASE":
         _update_short_chase(delta)
         return
@@ -48,6 +61,24 @@ func _physics_process(delta: float) -> void:
         return
 
     _update_patrol(delta)
+
+func _update_bell_chase() -> void:
+    if not is_instance_valid(_player_target):
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+
+    var direction := _player_target.global_position - global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+
+    direction = direction.normalized()
+    velocity = direction * preview_bell_chase_speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
 
 func _update_patrol(delta: float) -> void:
     if not _patrol_active:
