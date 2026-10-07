@@ -26,11 +26,30 @@ func _ready() -> void:
     _build_school_navigation()
     await get_tree().physics_frame
     await get_tree().physics_frame
+    await _wait_for_navigation_map()
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
     _create_monster_spawn_locations()
     _apply_bell_debug_state()
+
+func _wait_for_navigation_map() -> void:
+    var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
+    var navigation_map: RID = navigation_agent.get_navigation_map()
+    var nurse_floor: MeshInstance3D = _find_nurse_floor(school)
+    if nurse_floor == null or nurse_floor.mesh == null:
+        return
+    var bounds: AABB = nurse_floor.global_transform * nurse_floor.mesh.get_aabb()
+    var sample_position := Vector3(
+        bounds.position.x + bounds.size.x * 0.5,
+        bounds.position.y + bounds.size.y,
+        bounds.position.z + bounds.size.z * 0.5
+    )
+    for frame_index in range(120):
+        var nearest_point: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, sample_position)
+        if NavigationServer3D.map_get_iteration_id(navigation_map) > 0 and nearest_point.distance_to(sample_position) <= 1.35:
+            return
+        await get_tree().physics_frame
 
 func _build_school_navigation() -> void:
     var region := NavigationRegion3D.new()
@@ -112,7 +131,8 @@ func _create_monster_spawn_locations() -> void:
         "art room floor", "lab room floor", "classroom b floor", "cafeteria floor",
         "outside floor", "storage closet floor"
     ]
-    var navigation_map := monster.get_node("NavigationAgent3D").get_navigation_map()
+    var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
+    var navigation_map: RID = navigation_agent.get_navigation_map()
     for candidate in candidates:
         var spawn_position: Vector3
         if candidate["id"] == "behind_locker_bank_hall":
