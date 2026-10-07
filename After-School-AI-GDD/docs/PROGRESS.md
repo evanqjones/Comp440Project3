@@ -6,12 +6,13 @@
 
 ## Evan — Monster System
 
-- **Status:** Not started (implementation)
+- **Status:** Preview patrol started; full behavior and School navigation integration remain in progress
+- **Preview prototype (2026-10-07):** Added a stationary 3 m capsule with an opaque triangular search cone in the Godot preview. Z toggles preview-only red Bell lighting/status; this does not implement authoritative Bell state, timer, safe rooms, movement, detection, collision, capture, or reset.
 - **Done:** Monster behavior and ownership brief documented.
-- **In progress:** None.
-- **Next:** Inspect project, establish Monster scene/controller against agreed contracts; begin with patrol/perception slice.
+- **In progress:** Added a slow, reversible preview patrol and a visible-POV transition into short chase. Monster spawn sits toward the Classroom D side of the Lobby. Patrol/chase speeds and sight-loss grace are provisional exports.
+- **Next:** Coordinate with Zion on stable room/door/nav queries before adding Bell pathfinding, safe-room avoidance, or relocation. Connect Rhaiyn's player/noise interface before noise investigation.
 - **Needs from others:** Zion's room/door IDs and navigation representation; Rhaiyn's player/noise interface; team decisions for perception and timing values.
-- **Handoff notes:** No teleport during Bell chase. Outside Bell, relocation only offscreen; if the candidate is visible, choose another location. Safe-room exclusion comes from Zion's active safe-room set.
+- **Handoff notes:** No teleport during Bell chase. Outside Bell, relocation only offscreen; if the candidate is visible, choose another location. Safe-room exclusion comes from Zion's active safe-room set. Preview short chase reads the Player node only as the approved target transform, uses the displayed cone plus collision ray, and has no capture effect. Door-aware pathfinding is not implemented; no monster location enters HUD/minimap.
 
 ## Zion — School System
 

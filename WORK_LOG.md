@@ -41,3 +41,21 @@ This log records the school-model and Godot-preview work completed with the user
 - Placeholder movement/camera script: `scenes/player_placeholder.gd`.
 - Existing PlayerSystem script: `scripts/player_system.gd` (separate; unchanged during this work).
 - Gameplay systems remain follow-up work under the owner boundaries and open decisions in `After-School-AI-GDD/docs/AGENTS.md` and the related design docs.
+
+## Monster searchlight and Bell preview (2026-10-07)
+
+- Created `scenes/monster_placeholder.tscn` and its script with a dark 3 m capsule and an opaque yellow triangular search cone. The cone is a visual line-of-sight aid; it does not perform occlusion or detection checks.
+- Shortened the search cone to a 6 m forward distance and 2.25 m half-width, preserving its original angle.
+- Halved the search cone again to a 3 m forward distance and 1.125 m half-width, preserving the same angle.
+- Reduced its size by 75% to a 0.75 m forward distance and 0.28125 m half-width after the cone still covered too much of the preview.
+- Restored the regular 3 m forward distance and 1.125 m half-width after fixing the stale running preview.
+- Added the stationary monster to the school preview near the Lobby and oriented its cone toward the player start. It has no collision, movement, capture, or player-reset behavior, so contact has no effect.
+- Bound **Z** in the preview scene to toggle a visible Bell debug status and red preview background/ambient/key light. This does not implement the authoritative School Bell timer, safe-room selection, or cross-system state.
+- Reversed the generated cone triangle winding after Godot mesh validation identified it; the cone no longer appears in the validation findings. The validator still reports pre-existing zero-area UV warnings on room-label meshes.
+- Verified the preview runs and the Z toggle switches between OFF/normal and ON/red states.
+
+## Monster hallway patrol (2026-10-07)
+
+- Changed the monster placeholder into a colliding `CharacterBody3D` and added a slow, reversible patrol along a short hallway-side route. Patrol speed and span remain provisional tuning values.
+- Moved its preview spawn from the Lobby entrance side toward the Classroom D connection. Patrol remains preview-only; room/door pathfinding, Bell chase, noise response, and capture await School/Player interfaces.
+- Added visible-cone and wall-ray checks to enter a short chase, with a configurable loss-of-sight grace period. The monster returns to its patrol when sight is lost; chase does not capture or reset the player.
