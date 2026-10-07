@@ -21,6 +21,8 @@ var _bell_debug_active := false
 var _spawn_markers: Array[Node3D] = []
 var _spawn_marker_nodes_visible := true
 var _preview_relocation_elapsed := 0.0
+var _camera_hallway_spawn: Node3D
+var _camera_hallway_spawn_valid := false
 
 func _ready() -> void:
     _load_school_model()
@@ -34,9 +36,16 @@ func _ready() -> void:
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
     _create_monster_spawn_locations()
+    _camera_hallway_spawn = _make_spawn_panel(
+        {"id": "behind_camera_hallway", "kind": "Behind camera hallway"},
+        Vector3.ZERO
+    )
+    _camera_hallway_spawn.visible = false
     _apply_bell_debug_state()
 
 func _process(delta: float) -> void:
+    _camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
+    _camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
     var chase_active: bool = monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE"
     if _bell_debug_active or chase_active:
         _update_spawn_debug_label()
@@ -53,7 +62,8 @@ func _update_spawn_debug_label() -> void:
         countdown_text = "paused (Bell)"
     elif monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE":
         countdown_text = "paused (chase)"
-    spawn_help.text = "Spawn panels: %d   Auto relocate: %s   Hallway bias: 75%%   M: toggle   X: test" % [_spawn_markers.size(), countdown_text]
+    var spawn_count := _spawn_markers.size() + int(_camera_hallway_spawn_valid)
+    spawn_help.text = "Spawn panels: %d   Auto relocate: %s   Hallway bias: 75%%   M: toggle   X: test" % [spawn_count, countdown_text]
 
 func _wait_for_navigation_map() -> void:
     var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
@@ -109,6 +119,8 @@ func _unhandled_input(event: InputEvent) -> void:
         _spawn_marker_nodes_visible = not _spawn_marker_nodes_visible
         for marker in _spawn_markers:
             marker.visible = _spawn_marker_nodes_visible
+        if is_instance_valid(_camera_hallway_spawn):
+            _camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
         get_viewport().set_input_as_handled()
     elif event.keycode == KEY_X:
         _try_debug_offscreen_relocation()
@@ -226,10 +238,12 @@ func _position_in_excluded_floor(position: Vector3, excluded_names: Array[String
     return false
 
 func _try_debug_offscreen_relocation() -> void:
-    if _bell_debug_active or _spawn_markers.is_empty():
+    if _bell_debug_active or (_spawn_markers.is_empty() and not _camera_hallway_spawn_valid):
         return
     var hallway_markers: Array[Node3D] = []
     var other_markers: Array[Node3D] = []
+    if _camera_hallway_spawn_valid:
+        hallway_markers.append(_camera_hallway_spawn)
     for marker in _spawn_markers:
 		if _is_hallway_spawn(marker):
             hallway_markers.append(marker)
@@ -257,7 +271,45 @@ func _try_debug_offscreen_relocation() -> void:
 
 func _is_hallway_spawn(marker: Node3D) -> bool:
 	var spawn_kind := String(marker.get_meta("spawn_kind", ""))
-	return spawn_kind in ["Beyond hallway corner", "T-intersection", "Far end of hall", "Behind lockers (hall side)"]
+	return spawn_kind in ["Beyond hallway corner", "T-intersection", "Far end of hall", "Behind lockers (hall side)", "Behind camera hallway"]
+
+func _update_follow_camera_hallway_spawn() -> bool:
+    if not is_instance_valid(_camera_hallway_spawn) or not is_instance_valid(player.player_camera):
+        return false
+    var camera: Camera3D = player.player_camera
+    var backward := camera.global_basis.z
+    backward.y = 0.0
+    if backward.length_squared() < 0.001:
+        return false
+    backward = backward.normalized()
+    var desired_position := camera.global_position + backward * 4.0
+    desired_position.y = player.global_position.y
+    var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
+    var navigation_map: RID = navigation_agent.get_navigation_map()
+    var hallway_position: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
+    if hallway_position.distance_to(desired_position) > 0.8:
+        return false
+    var camera_forward := -backward
+    if (hallway_position - camera.global_position).dot(camera_forward) > -0.5:
+        return false
+    var excluded_floor_names: Array[String] = [
+        "main office floor", "locker room floor", "library floor", "artroom floor",
+        "art room floor", "lab room floor", "classroom b floor", "cafeteria floor",
+        "outside floor", "storage closet floor", "auditorium floor", "gym floor",
+        "classroom a floor", "classroom c floor", "classroom d floor", "classroom e floor",
+        "nurse office floor", "bathroom floor"
+    ]
+    if _position_in_excluded_floor(hallway_position, excluded_floor_names):
+        return false
+    var nearest_hall_marker_distance := INF
+    for marker in _spawn_markers:
+        if not _is_hallway_spawn(marker):
+            continue
+        nearest_hall_marker_distance = minf(nearest_hall_marker_distance, hallway_position.distance_to(marker.global_position))
+    if nearest_hall_marker_distance > 8.0:
+        return false
+    _camera_hallway_spawn.global_position = hallway_position
+    return true
 
 func _load_school_model() -> void:
     var document := GLTFDocument.new()
