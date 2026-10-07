@@ -57,36 +57,36 @@ func set_player_target(player: Node3D) -> void:
     _player_target = player
 
 func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D) -> bool:
-	# This is a manual preview hook. Production relocation timing/candidate choice
-	# remains a stalking-system decision; Bell chase categorically rejects it.
-	if _preview_bell_active or current_state != &"PATROL" or not is_instance_valid(player_camera):
-		return false
-	if _monster_body_visible_from_camera(global_position, player_camera):
-		return false
-	if _monster_body_visible_from_camera(destination, player_camera):
-		return false
-	if destination.distance_to(global_position) < 2.0:
-		return false
-	var nav_map := _navigation_agent.get_navigation_map()
-	if NavigationServer3D.map_get_closest_point(nav_map, destination).distance_to(destination) > 1.35:
-		return false
-	global_position = destination
-	velocity = Vector3.ZERO
-	start_preview_hallway_patrol(_patrol_axis)
-	return true
+    # This is a manual preview hook. Production relocation timing/candidate choice
+    # remains a stalking-system decision; Bell chase categorically rejects it.
+    if _preview_bell_active or current_state != &"PATROL" or not is_instance_valid(player_camera):
+        return false
+    if _monster_body_visible_from_camera(global_position, player_camera):
+        return false
+    if _monster_body_visible_from_camera(destination, player_camera):
+        return false
+    if destination.distance_to(global_position) < 2.0:
+        return false
+    var nav_map: RID = _navigation_agent.get_navigation_map()
+    if NavigationServer3D.map_get_closest_point(nav_map, destination).distance_to(destination) > 1.35:
+        return false
+    global_position = destination
+    velocity = Vector3.ZERO
+    start_preview_hallway_patrol(_patrol_axis)
+    return true
 
 func _monster_body_visible_from_camera(base_position: Vector3, player_camera: Camera3D) -> bool:
-	for height in [0.65, 1.5, 2.35]:
-		var point := base_position + Vector3.UP * height
-		if player_camera.is_position_behind(point) or not player_camera.is_position_in_frustum(point):
-			continue
-		var query := PhysicsRayQueryParameters3D.create(player_camera.global_position, point, 1, [get_rid()])
-		if _player_target is CollisionObject3D:
-			query.exclude.append((_player_target as CollisionObject3D).get_rid())
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
-		if hit.is_empty():
-			return true
-	return false
+    for height in [0.65, 1.5, 2.35]:
+        var point: Vector3 = base_position + Vector3.UP * float(height)
+        if player_camera.is_position_behind(point) or not player_camera.is_position_in_frustum(point):
+            continue
+        var query := PhysicsRayQueryParameters3D.create(player_camera.global_position, point, 1, [get_rid()])
+        if _player_target is CollisionObject3D:
+            query.exclude.append((_player_target as CollisionObject3D).get_rid())
+        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        if hit.is_empty():
+            return true
+    return false
 
 func set_preview_bell_active(active: bool) -> void:
     if _preview_bell_active == active:
