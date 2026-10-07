@@ -1,0 +1,74 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scenes/school_system_demo.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/school_foundation.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/player_placeholder.tscn" id="3"]
+
+[sub_resource type="Environment" id="Environment_demo"]
+background_mode = 1
+background_color = Color(0.055, 0.07, 0.1, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.55, 0.62, 0.75, 1)
+ambient_light_energy = 0.8
+
+[sub_resource type="StyleBoxFlat" id="PanelStyle"]
+bg_color = Color(0.025, 0.035, 0.05, 0.9)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_left = 8
+corner_radius_bottom_right = 8
+
+[node name="SchoolSystemDemo" type="Node3D"]
+script = ExtResource("1")
+
+[node name="SchoolFoundation" parent="." instance=ExtResource("2")]
+
+[node name="SchoolBell" parent="SchoolFoundation" index="0"]
+minimum_interval = 5.0
+maximum_interval = 10.0
+bell_duration = 4.0
+auto_start = false
+debug_transitions = true
+
+[node name="PlayerPlaceholder" parent="." instance=ExtResource("3")]
+position = Vector3(26, 0.05, 26)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_demo")
+
+[node name="DemoOverlay" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="PanelContainer" parent="DemoOverlay"]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 470.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("PanelStyle")
+
+[node name="Margin" type="MarginContainer" parent="DemoOverlay/Panel"]
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Rows" type="VBoxContainer" parent="DemoOverlay/Panel/Margin"]
+theme_override_constants/separation = 5
+
+[node name="Title" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+theme_override_font_sizes/font_size = 22
+text = "AFTER SCHOOL | School System Demo"
+
+[node name="Room" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+text = "Room: Entrance"
+
+[node name="Bell" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+theme_override_font_sizes/font_size = 20
+text = "Bell quiet"
+
+[node name="Progress" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+text = "Test progress: 0 / 6  |  P: advance  R: reset"
+
+[node name="Controls" type="Label" parent="DemoOverlay/Panel/Margin/Rows"]
+text = "WASD: walk  |  Mouse: look  |  Esc: release mouse\nExplore the classrooms, library, and hallway loop."
+
+[editable path="SchoolFoundation"]

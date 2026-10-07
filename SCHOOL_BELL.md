@@ -1,6 +1,6 @@
 # School Bell
 
-`scripts/school/school_bell.gd` owns the Bell state and scheduling. Its reusable scene is `scenes/school_bell.tscn`, instanced by `scenes/school_foundation.tscn`. The existing imported-model main scene is unchanged. No Player or Monster references, UI, audio, lighting, or movement are controlled.
+`scripts/school/school_bell.gd` owns the Bell state and scheduling. Its reusable scene is `scenes/school_bell.tscn`, instanced by `scenes/school_foundation.tscn`. F5 now launches `scenes/school_system_demo.tscn`, whose independent demo overlay subscribes to Bell status and supplies simulated progress with P/R keys. The demo overrides intervals to 5–10 seconds and duration to 4 seconds; service defaults below remain unchanged. The scheduler controls no Player or Monster references, UI, audio, lighting, or movement.
 
 ## Inspector settings
 
