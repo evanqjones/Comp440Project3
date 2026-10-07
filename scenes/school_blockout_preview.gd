@@ -231,8 +231,7 @@ func _try_debug_offscreen_relocation() -> void:
     var hallway_markers: Array[Node3D] = []
     var other_markers: Array[Node3D] = []
     for marker in _spawn_markers:
-        var spawn_id: String = String(marker.get_meta("spawn_id", ""))
-        if spawn_id.begins_with("hall_corner_"):
+		if _is_hallway_spawn(marker):
             hallway_markers.append(marker)
         else:
             other_markers.append(marker)
@@ -240,21 +239,25 @@ func _try_debug_offscreen_relocation() -> void:
     if hallway_first:
         hallway_markers.shuffle()
         for marker in hallway_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
                 return
         other_markers.shuffle()
         for marker in other_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, false):
                 return
     else:
         other_markers.shuffle()
         for marker in other_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, false):
                 return
         hallway_markers.shuffle()
         for marker in hallway_markers:
-            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
                 return
+
+func _is_hallway_spawn(marker: Node3D) -> bool:
+	var spawn_kind := String(marker.get_meta("spawn_kind", ""))
+	return spawn_kind in ["Beyond hallway corner", "T-intersection", "Far end of hall", "Behind lockers (hall side)"]
 
 func _load_school_model() -> void:
     var document := GLTFDocument.new()
