@@ -1,38 +1,30 @@
-extends Node
+extends CharacterBody3D
 class_name PlayerSystem
 
-var current_location: Vector2 = Vector2.ZERO
-var movement_state: String = "walking"
-var noise_level: float = 0.0
-var collected_belongings: Array[String] = []
-var is_hiding: bool = false
+# Read the body's live 3D position instead of maintaining a second location.
+var current_location: Vector3:
+	get:
+		return get_world_position()
+
+var movement_state: StringName:
+	get:
+		return _movement_state
+
+var _movement_state: StringName = &"idle"
 
 
-func update_location(new_location: Vector2) -> void:
-	current_location = new_location
+func get_world_position() -> Vector3:
+	return global_position
 
 
-func set_movement_state(new_state: String) -> void:
-	movement_state = new_state
+func _update_movement_state(is_running: bool) -> void:
+	# Call after move_and_slide(): walls and gravity alone must not count as walking.
+	var real_velocity := get_real_velocity()
+	var horizontal_speed_squared := Vector2(real_velocity.x, real_velocity.z).length_squared()
 
-	match movement_state:
-		"walking":
-			noise_level = 1.0
-		"running":
-			noise_level = 3.0
-		"hiding":
-			noise_level = 0.0
-
-
-func collect_belonging(item_name: String) -> void:
-	if item_name not in collected_belongings:
-		collected_belongings.append(item_name)
-
-
-func set_hiding(value: bool) -> void:
-	is_hiding = value
-
-	if is_hiding:
-		set_movement_state("hiding")
+	if horizontal_speed_squared <= 0.0001:
+		_movement_state = &"idle"
+	elif is_running:
+		_movement_state = &"running"
 	else:
-		set_movement_state("walking")
+		_movement_state = &"walking"
