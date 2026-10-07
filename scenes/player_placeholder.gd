@@ -1,7 +1,7 @@
 extends "res://scripts/player_system.gd"
 
-@export_range(1.0, 8.0, 0.1) var move_speed: float = 4.5
-@export_range(1.0, 16.0, 0.1) var run_speed: float = 7.5
+@export_range(1.0, 8.0, 0.1) var move_speed: float = 3.5
+@export_range(1.0, 16.0, 0.1) var run_speed: float = 5.5
 @export_range(1.0, 30.0, 0.5) var ground_acceleration: float = 16.0
 @export_range(5.0, 40.0, 0.5) var gravity_strength: float = 24.0
 @export_range(0.001, 0.01, 0.0005) var mouse_sensitivity: float = 0.003
@@ -49,8 +49,8 @@ func _physics_process(delta: float) -> void:
     right.y = 0.0
     right = right.normalized()
     var move_direction := (right * input_axis.x + forward * input_axis.y).normalized()
-    var is_running := Input.is_physical_key_pressed(KEY_SHIFT)
-    var target_speed := run_speed if is_running else move_speed
+    var is_sprinting := Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT)
+    var target_speed := run_speed if is_sprinting else move_speed
 
     if not is_on_floor():
         velocity.y -= gravity_strength * delta
@@ -65,4 +65,4 @@ func _physics_process(delta: float) -> void:
         velocity.z = move_toward(velocity.z, 0.0, ground_acceleration * delta)
 
     move_and_slide()
-    _update_movement_state(is_running)
+    _update_movement_state(is_sprinting)
