@@ -53,10 +53,18 @@ func start_preview_hallway_patrol(axis: Vector3) -> void:
     current_state = &"PATROL"
     monster_state_changed.emit(current_state)
 
+func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT) -> void:
+    _patrol_active = false
+    velocity = Vector3.ZERO
+    if in_hallway:
+        start_preview_hallway_patrol(axis)
+    else:
+        _set_state(&"PATROL")
+
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
-func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D) -> bool:
+func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool) -> bool:
     # This is a manual preview hook. Production relocation timing/candidate choice
     # remains a stalking-system decision; Bell chase categorically rejects it.
     if _preview_bell_active or current_state != &"PATROL" or not is_instance_valid(player_camera):
@@ -72,7 +80,7 @@ func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3
         return false
     global_position = destination
     velocity = Vector3.ZERO
-    start_preview_hallway_patrol(_patrol_axis)
+    set_preview_spawn_behavior(in_hallway, _patrol_axis)
     return true
 
 func _monster_body_visible_from_camera(base_position: Vector3, player_camera: Camera3D) -> bool:
