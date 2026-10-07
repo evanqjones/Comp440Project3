@@ -1,6 +1,6 @@
 # School System foundation
 
-Open `scenes/school_foundation.tscn` in Godot's 3D editor. The tool script generates the graybox in the editor and at runtime. It has no player, camera, Monster, UI, bell, inventory, or audio logic. F5 still opens the existing imported-model preview. Instance this scene into an integration scene when ready.
+Open `scenes/school_foundation.tscn` in Godot's 3D editor. The tool script generates the graybox in the editor and at runtime. It has no player, camera, Monster, UI, inventory, or audio logic. The separate SchoolBell child now provides the scheduler described in [SCHOOL_BELL.md](SCHOOL_BELL.md). F5 still opens the existing imported-model preview. Instance this scene into an integration scene when ready.
 
 This is the small provisional layout requested for the foundation, not a replacement for `assets.blend`, its GLB, or the larger documented floorplan. All six internal doorways and the exterior doorway are permanently open in this slice. Door interactions/locks and progression remain future work; no existing frozen contract is changed. Placeholder dimensions and topology live in `_build()` and the constants in `scripts/school/school_foundation.gd`.
 

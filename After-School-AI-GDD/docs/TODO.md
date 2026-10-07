@@ -37,6 +37,7 @@ Items marked **DECISION** require human/team agreement before they can be made f
 
 ## Milestone 4 — Bell chase
 
+- [x] **Zion:** isolated Bell scheduler: configurable random intervals/duration, exact-once typed state transitions, and objective-progress scaling of future intervals; automated tests and [manual steps](../../SCHOOL_BELL.md). Full Bell progression/integration below remains outstanding.
 - [ ] **Zion:** authoritative Bell state, 10-second start, +2 seconds by progression, indefinite final Bell.
 - [ ] **DECISION — Zion/team:** Bell first-trigger/cadence and progression step mapping.
 - [ ] **Zion:** random eligible active safe-room selection and consistent publication.
