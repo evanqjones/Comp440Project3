@@ -109,6 +109,10 @@ func _create_monster_spawn_locations() -> void:
     var candidates: Array[Dictionary] = [
         {"id": "hall_corner_lobby_west", "floor": "lobby floor", "u": 0.12, "v": 0.22, "kind": "Beyond hallway corner"},
         {"id": "hall_corner_lobby_east", "floor": "lobby floor", "u": 0.92, "v": 0.78, "kind": "Beyond hallway corner"},
+        {"id": "hall_corner_auditorium_wing", "floor": "school site floor - circulation", "x": 6.5, "z": -5.0, "kind": "Beyond hallway corner"},
+        {"id": "hall_corner_cafe_science", "floor": "school site floor - circulation", "x": 22.5, "z": 11.0, "kind": "Beyond hallway corner"},
+        {"id": "hall_corner_classroom_cd", "floor": "school site floor - circulation", "x": 20.0, "z": 15.5, "kind": "Beyond hallway corner"},
+        {"id": "hall_corner_science_class_e", "floor": "school site floor - circulation", "x": 28.0, "z": 16.0, "kind": "Beyond hallway corner"},
         {"id": "t_intersection_lobby", "floor": "lobby floor", "u": 0.70, "v": 0.48, "kind": "T-intersection"},
         {"id": "behind_lobby_pillar", "floor": "lobby floor", "u": 0.49, "v": 0.83, "kind": "Behind pillar"},
         {"id": "behind_locker_bank_hall", "floor": "", "u": 0.0, "v": 0.0, "kind": "Behind lockers (hall side)"},
@@ -142,7 +146,13 @@ func _create_monster_spawn_locations() -> void:
     var navigation_map: RID = navigation_agent.get_navigation_map()
     for candidate in candidates:
         var spawn_position: Vector3
-        if candidate["id"] == "behind_locker_bank_hall":
+        if candidate.has("x") and candidate.has("z"):
+            var circulation_floor := _find_room_floor(school, candidate["floor"])
+            if circulation_floor == null or circulation_floor.mesh == null:
+                continue
+            var circulation_bounds: AABB = circulation_floor.global_transform * circulation_floor.mesh.get_aabb()
+            spawn_position = Vector3(float(candidate["x"]), circulation_bounds.position.y + circulation_bounds.size.y, float(candidate["z"]))
+        elif candidate["id"] == "behind_locker_bank_hall":
             var locker_floor := _find_room_floor(school, "locker room floor")
             if locker_floor == null or locker_floor.mesh == null:
                 continue
