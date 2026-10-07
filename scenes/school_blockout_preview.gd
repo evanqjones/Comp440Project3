@@ -15,6 +15,7 @@ const NORMAL_AMBIENT := Color(0.55, 0.62, 0.75, 1.0)
 const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
+const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
 
 var _bell_debug_active := false
 var _spawn_markers: Array[Node3D] = []
@@ -36,13 +37,23 @@ func _ready() -> void:
     _apply_bell_debug_state()
 
 func _process(delta: float) -> void:
-    if _bell_debug_active or monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE":
+    var chase_active: bool = monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE"
+    if _bell_debug_active or chase_active:
+        _update_spawn_debug_label()
         return
     _preview_relocation_elapsed += delta
-    if _preview_relocation_elapsed < PREVIEW_RELOCATION_INTERVAL:
-        return
-    _preview_relocation_elapsed = 0.0
-    _try_debug_offscreen_relocation()
+    if _preview_relocation_elapsed >= PREVIEW_RELOCATION_INTERVAL:
+        _preview_relocation_elapsed = 0.0
+        _try_debug_offscreen_relocation()
+    _update_spawn_debug_label()
+
+func _update_spawn_debug_label() -> void:
+    var countdown_text := "%.1fs" % maxf(0.0, PREVIEW_RELOCATION_INTERVAL - _preview_relocation_elapsed)
+    if _bell_debug_active:
+        countdown_text = "paused (Bell)"
+    elif monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE":
+        countdown_text = "paused (chase)"
+    spawn_help.text = "Spawn panels: %d   Auto relocate: %s   Hallway bias: 75%%   M: toggle   X: test" % [_spawn_markers.size(), countdown_text]
 
 func _wait_for_navigation_map() -> void:
     var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
@@ -176,7 +187,7 @@ func _create_monster_spawn_locations() -> void:
         if _position_in_excluded_floor(closest_nav_point, excluded_floor_names):
             continue
         _spawn_markers.append(_make_spawn_panel(candidate, closest_nav_point))
-    spawn_help.text = "Spawn panels: %d   Auto relocate: 10s while not chasing   M: toggle   X: test" % _spawn_markers.size()
+    _update_spawn_debug_label()
 
 func _make_spawn_panel(candidate: Dictionary, spawn_position: Vector3) -> Node3D:
     var marker := Node3D.new()
@@ -217,11 +228,33 @@ func _position_in_excluded_floor(position: Vector3, excluded_names: Array[String
 func _try_debug_offscreen_relocation() -> void:
     if _bell_debug_active or _spawn_markers.is_empty():
         return
-    var shuffled := _spawn_markers.duplicate()
-    shuffled.shuffle()
-    for marker in shuffled:
-        if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
-            return
+    var hallway_markers: Array[Node3D] = []
+    var other_markers: Array[Node3D] = []
+    for marker in _spawn_markers:
+        var spawn_id: String = String(marker.get_meta("spawn_id", ""))
+        if spawn_id.begins_with("hall_corner_"):
+            hallway_markers.append(marker)
+        else:
+            other_markers.append(marker)
+    var hallway_first := randf() < HALLWAY_SPAWN_FIRST_CHANCE
+    if hallway_first:
+        hallway_markers.shuffle()
+        for marker in hallway_markers:
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+                return
+        other_markers.shuffle()
+        for marker in other_markers:
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+                return
+    else:
+        other_markers.shuffle()
+        for marker in other_markers:
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+                return
+        hallway_markers.shuffle()
+        for marker in hallway_markers:
+            if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera):
+                return
 
 func _load_school_model() -> void:
     var document := GLTFDocument.new()
