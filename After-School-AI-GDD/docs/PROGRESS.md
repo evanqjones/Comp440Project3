@@ -15,11 +15,13 @@
 
 ## Zion — School System
 
-- **Status:** Not started (implementation)
+- **Status:** Small standalone School foundation implemented (2026-10-06); broader progression remains unimplemented.
+- **Foundation handoff:** See [SCHOOL_FOUNDATION.md](../../SCHOOL_FOUNDATION.md). Created `scripts/school/school_foundation.gd`, `scenes/school_foundation.tscn`, `tests/school_foundation_test.gd`, and the handoff. Nine room/hall IDs, 37 stalking candidates, seven open door connections including one exit, collision geometry, room tracking, and AStar3D world-space routes. This user-requested small graybox is provisional and separate from the imported full floorplan. Existing frozen signatures and other owners' files are unchanged.
+- **Foundation verification:** Godot 4.7.2 headless test passed with zero failures: all candidate pairs reachable, 123 unique capsule-swept segments clear, room lookup/tracking/removal, invalid endpoint rejection, wall sight blocking, and transformed queries. Host emitted a root certificate-store warning unrelated to these offline checks. Manual editor/walking verification remains pending.
 - **Asset handoff (2026-10-06):** Blender school blockout and Godot preview are now available. See [`WORK_LOG.md`](../../WORK_LOG.md) for the edit history and exact file handoff. The blockout includes room geometry, roofs, door openings/swing markers, and window gaps. Godot uses the exported GLB and placeholder capsule/camera. Gameplay room/door IDs, interactive door state, keys, progression, Bell behavior, and checkpoint logic remain unimplemented.
 - **Done:** School behavior and ownership brief documented.
 - **In progress:** None.
-- **Next:** Supply/confirm floorplan, room/door IDs, starting route, lock assignment, and exit location; implement room/door interaction slice.
+- **Next:** Manually walk the isolated foundation and coordinate integration of its room/stalking/path queries; separately confirm full-floorplan IDs, starting route, lock assignment, and door interaction slice.
 - **Needs from others:** Evan's room graph/navigation needs; Rhaiyn's interaction/noise/HUD contract consumers.
 - **Handoff notes:** Door opens permanently and is loud once on successful open. School is authority for Bell, safe-room IDs, progression, and world checkpoint snapshot. Exact cadence/safe-room selection remains open.
 

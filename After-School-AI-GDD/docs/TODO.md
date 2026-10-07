@@ -4,6 +4,7 @@ Items marked **DECISION** require human/team agreement before they can be made f
 
 ## Foundation
 
+- [x] **Zion:** user-requested small standalone School foundation with stable room IDs, player-room lookup, stalking candidates, physical waypoint routes, solid walls/corners, and one exit. See [handoff](../../SCHOOL_FOUNDATION.md); this provisional graybox does not complete the larger floorplan migration below.
 - [ ] **Zion/team:** translate `docs/MAP_RECREATION.md` into room/door IDs and a traversable graybox; preserve the supplied relative placements and mark unresolved door/layout ambiguities for review.
 - [ ] **DECISION — Team:** choose integration owner for root scene/project settings/shared wiring.
 - [ ] **DECISION — Team:** pin exact Godot 4 minor version, renderer/export targets, repository layout, and test workflow after inspecting repo.
