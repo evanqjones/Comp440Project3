@@ -77,3 +77,9 @@ This log records the school-model and Godot-preview work completed with the user
 - Added provisional clearance settings and dynamically narrows/lowers the monster capsule and visual in tight doorway gaps.
 - The blockout has no authoritative door-state or safe-room data; pathfinding currently uses its modeled doorway gaps. Closed/locked door behavior awaits School's live door-state integration. No capture behavior was added.
 - Live Godot check: navigation baked 325 polygons and produced a 7-point route from the Lobby-side monster spawn to the Nurse Office player start. The preview Z toggle entered `BELL_CHASE` at 6.5 m/s.
+
+## Camera-follow hallway spawn (2026-10-07)
+
+- Added a temporary green spawn panel that tracks a candidate point 4 m behind the player camera. It only becomes a candidate when the point stays behind the camera, is within 0.8 m of the navigation surface, is outside all excluded room/outside floor bounds, and remains within 8 m of a known hallway spawn zone.
+- The moving point joins the hallway candidates, retaining the existing 75% hallway-first relocation preference. If it cannot find a safe hallway point, it is hidden and skipped.
+- Verified in the live Godot preview that the moving point becomes valid behind the camera in the Lobby and remains on the hallway navigation surface. Godot reported no editor errors.
