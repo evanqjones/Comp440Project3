@@ -9,7 +9,7 @@
 - **Status:** Preview patrol started; full behavior and School navigation integration remain in progress
 - **Preview prototype (2026-10-07):** Added a stationary 3 m capsule with an opaque triangular search cone in the Godot preview. Z toggles preview-only red Bell lighting/status; this does not implement authoritative Bell state, timer, safe rooms, movement, detection, collision, capture, or reset.
 - **Done:** Monster behavior and ownership brief documented.
-- **In progress:** Added a slow, reversible preview patrol and a visible-POV transition into short chase. Monster spawn sits toward the Classroom D side of the Lobby. Patrol/chase speeds and sight-loss grace are provisional exports.
+- **In progress:** Added a slow, reversible preview patrol and a visible-POV transition into short chase. Monster spawn sits toward the Classroom D side of the Lobby. Patrol speed is provisionally 0.5 m/s and short chase speed 4.5 m/s, above the current walking speed and below sprint.
 - **Next:** Coordinate with Zion on stable room/door/nav queries before adding Bell pathfinding, safe-room avoidance, or relocation. Connect Rhaiyn's player/noise interface before noise investigation.
 - **Needs from others:** Zion's room/door IDs and navigation representation; Rhaiyn's player/noise interface; team decisions for perception and timing values.
 - **Handoff notes:** No teleport during Bell chase. Outside Bell, relocation only offscreen; if the candidate is visible, choose another location. Safe-room exclusion comes from Zion's active safe-room set. Preview short chase reads the Player node only as the approved target transform, uses the displayed cone plus collision ray, and has no capture effect. Door-aware pathfinding is not implemented; no monster location enters HUD/minimap.
@@ -26,10 +26,10 @@
 
 ## Rhaiyn — Player System
 
-- **Status:** Not started (implementation)
+- **Status:** Placeholder locomotion available; speed tuning and sprint binding verified in progress
 - **Done:** Player behavior and ownership brief documented.
-- **In progress:** None.
-- **Next:** Inspect project and implement walk/sprint/stamina and horizontal camera slice against existing conventions.
+- **In progress:** Tuned provisional walk and sprint speeds to 3.5 m/s and 5.5 m/s. Holding Shift selects sprint speed.
+- **Next:** Add stamina and publish quiet-walk/loud-sprint noise through the agreed player interface.
 - **Needs from others:** Zion's stable room/target IDs and objective/item marker APIs; Evan's chase speed target for tuning.
 - **Handoff notes:** Emit walking as quiet and sprinting as loud without per-frame event spam. Door opening and successful item pickup loudness should be emitted exactly once by the authoritative interaction path. Minimap never contains monster data.
 

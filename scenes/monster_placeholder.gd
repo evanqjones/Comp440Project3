@@ -2,9 +2,9 @@ extends CharacterBody3D
 
 @export_range(0.25, 20.0, 0.125) var sight_distance: float = 3.0
 @export_range(0.125, 8.0, 0.03125) var sight_half_width: float = 1.125
-@export_range(0.1, 3.0, 0.1) var preview_patrol_speed: float = 0.7
+@export_range(0.1, 3.0, 0.1) var preview_patrol_speed: float = 0.5
 @export_range(0.25, 5.0, 0.25) var preview_patrol_half_length: float = 1.75
-@export_range(0.1, 10.0, 0.1) var preview_short_chase_speed: float = 5.5
+@export_range(0.1, 10.0, 0.1) var preview_short_chase_speed: float = 4.5
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
 
 signal monster_state_changed(state_id: StringName)

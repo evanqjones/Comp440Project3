@@ -59,3 +59,8 @@ This log records the school-model and Godot-preview work completed with the user
 - Changed the monster placeholder into a colliding `CharacterBody3D` and added a slow, reversible patrol along a short hallway-side route. Patrol speed and span remain provisional tuning values.
 - Moved its preview spawn from the Lobby entrance side toward the Classroom D connection. Patrol remains preview-only; room/door pathfinding, Bell chase, noise response, and capture await School/Player interfaces.
 - Added visible-cone and wall-ray checks to enter a short chase, with a configurable loss-of-sight grace period. The monster returns to its patrol when sight is lost; chase does not capture or reset the player.
+
+## Movement speed tuning (2026-10-07)
+
+- Lowered player walk/sprint speeds to provisional 3.5/5.5 m/s. Shift selects sprint speed.
+- Lowered monster patrol/chase speeds to provisional 0.5/4.5 m/s, keeping short chase faster than walking and slower than sprint.
