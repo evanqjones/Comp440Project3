@@ -22,6 +22,8 @@ extends CharacterBody3D
 @export_range(1.0, 20.0, 0.5) var preview_snack_rush_speed: float = 7.0
 @export_range(1.0, 30.0, 0.5) var preview_snack_sight_distance: float = 14.0
 @export_range(0.5, 15.0, 0.5) var preview_snack_sight_half_width: float = 6.0
+@export_range(0.1, 2.0, 0.05) var preview_ruler_hall_speed: float = 1.1
+@export_range(1.0, 20.0, 0.5) var preview_ruler_spotlight_chase_speed: float = 8.0
 @export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
 @export_range(5.0, 90.0, 1.0) var preview_science_turn_speed_degrees: float = 18.0
 
@@ -90,6 +92,24 @@ var _preview_snack_peek_index := 1
 var _preview_snack_path_refresh := 0.0
 var _base_sight_distance := 0.0
 var _base_sight_half_width := 0.0
+var _preview_player_hidden_in_hallway_locker := false
+var _preview_ruler_hall_active := false
+var _preview_ruler_hall_spawn_pending := false
+var _preview_ruler_hall_spawn_position := Vector3.ZERO
+var _preview_ruler_hall_pending_side_science := false
+var _preview_ruler_hall_a_spawn := Vector3.ZERO
+var _preview_ruler_hall_science_spawn := Vector3.ZERO
+var _preview_ruler_hall_end_a := Vector3.ZERO
+var _preview_ruler_hall_end_science := Vector3.ZERO
+var _preview_ruler_hall_corner_a := Vector3.ZERO
+var _preview_ruler_hall_corner_science := Vector3.ZERO
+var _preview_ruler_hall_corner_turn_started := false
+var _preview_ruler_hall_at_science_spawn := false
+var _preview_ruler_hall_travel_to_science := true
+var _preview_ruler_hall_has_relocated_once := false
+var _preview_ruler_hall_return_count := 0
+var _preview_ruler_hall_speed_multiplier := 1.0
+var _preview_ruler_hall_complete := false
 var _weight_investigation_active := false
 var _weight_investigation_target := Vector3.ZERO
 var _weight_look_time := 0.0
@@ -168,7 +188,7 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
         _patrol_progress = clampf((global_position - _patrol_origin).dot(_patrol_axis), -preview_patrol_half_length, preview_patrol_half_length)
         _patrol_sign = 1.0 if _patrol_progress < preview_patrol_half_length else -1.0
         _patrol_active = true
-    elif encounter == &"brush" or encounter == &"ruler":
+    elif encounter == &"brush":
         _set_item_waypoint_target()
 
 func end_preview_item_encounter() -> void:
@@ -187,6 +207,68 @@ func end_preview_item_encounter() -> void:
     _glowing_face.visible = false
     if visible:
         _set_state(&"PATROL")
+
+func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: Vector3, beyond_science: Vector3, beyond_a: Vector3, science_corner: Vector3, a_corner: Vector3) -> void:
+    _preview_window_stalk_active = false
+    _preview_window_slide_active = false
+    _preview_book_sink_active = false
+    _preview_weight_escape_active = false
+    _preview_item_encounter = &"ruler_hall"
+    _preview_item_points.clear()
+    _preview_ruler_hall_active = true
+    _preview_ruler_hall_complete = false
+    _preview_ruler_hall_a_spawn = classroom_a_spawn
+    _preview_ruler_hall_science_spawn = science_spawn
+    _preview_ruler_hall_end_science = beyond_science
+    _preview_ruler_hall_end_a = beyond_a
+    _preview_ruler_hall_corner_science = science_corner
+    _preview_ruler_hall_corner_a = a_corner
+    _preview_ruler_hall_corner_turn_started = false
+    _preview_ruler_hall_at_science_spawn = false
+    _preview_ruler_hall_pending_side_science = false
+    _preview_ruler_hall_travel_to_science = true
+    _preview_ruler_hall_has_relocated_once = false
+    _preview_ruler_hall_return_count = 0
+    _preview_ruler_hall_speed_multiplier = 1.0
+    _preview_ruler_hall_spawn_position = classroom_a_spawn
+    _preview_ruler_hall_spawn_pending = true
+    _preview_item_refresh = 0.0
+    _preview_item_last_navigation_target = Vector3(INF, INF, INF)
+    _preview_player_hidden = false
+    _preview_player_hidden_in_hallway_locker = false
+    _patrol_active = false
+    _weight_investigation_active = false
+    _science_encounter_settled = false
+    _visual_capsule.visible = _capsule_was_visible
+    _search_cone.visible = true
+    _glowing_face.visible = false
+    visible = true
+    collision_layer = 2
+    collision_mask = 1
+    _navigation_agent.target_desired_distance = 0.75
+    velocity = Vector3.ZERO
+    _set_state(&"PATROL")
+
+func request_preview_ruler_hall_spawn(science_side: bool) -> void:
+    if not _preview_ruler_hall_active:
+        return
+    var requested_side := _preview_ruler_hall_pending_side_science if _preview_ruler_hall_spawn_pending else _preview_ruler_hall_at_science_spawn
+    if science_side == requested_side:
+        return
+    if _preview_ruler_hall_has_relocated_once:
+        _preview_ruler_hall_return_count += 1
+        _preview_ruler_hall_speed_multiplier = pow(3.0, float(_preview_ruler_hall_return_count))
+    else:
+        _preview_ruler_hall_has_relocated_once = true
+    _preview_ruler_hall_pending_side_science = science_side
+    _preview_ruler_hall_spawn_position = _preview_ruler_hall_science_spawn if science_side else _preview_ruler_hall_a_spawn
+    _preview_ruler_hall_spawn_pending = true
+
+func is_preview_ruler_hall_complete() -> bool:
+    return _preview_ruler_hall_complete
+
+func is_preview_ruler_hall_active() -> bool:
+    return _preview_ruler_hall_active
 
 func start_preview_window_stalk(facing_direction: Vector3, look_target: Vector3 = Vector3.ZERO) -> void:
     _preview_window_stalk_active = true
@@ -419,21 +501,8 @@ func _update_preview_item_encounter(delta: float) -> void:
                 _face_preview_direction(_preview_lab_attention_target - global_position, delta)
         &"science_classroom":
             _update_science_classroom_encounter(delta)
-        &"ruler":
-            if not _preview_item_points.is_empty() and global_position.distance_to(_preview_item_points[0]) > 0.8:
-                _glowing_face.visible = false
-                _move_preview_item_toward(_preview_item_points[0], 0.25, delta)
-                return
-            _visual_capsule.visible = false
-            _search_cone.visible = false
-            _glowing_face.visible = true
-            if _preview_item_switch_cooldown <= 0.0 and not _preview_item_points.is_empty() and is_instance_valid(_player_target):
-                var camera: Camera3D = _player_target.get("player_camera")
-                if is_instance_valid(camera) and not _monster_body_visible_from_camera(global_position, camera):
-                    _preview_item_waypoint_index = (_preview_item_waypoint_index + 1) % _preview_item_points.size()
-                    global_position = _preview_item_points[_preview_item_waypoint_index]
-                    velocity = Vector3.ZERO
-                _preview_item_switch_cooldown = randf_range(3.0, 5.0)
+        &"ruler_hall":
+            _update_preview_ruler_hall(delta)
         &"snack":
             _update_snack_encounter(delta)
 
@@ -473,6 +542,97 @@ func _update_snack_encounter(delta: float) -> void:
             _preview_snack_timer = randf_range(preview_snack_peek_interval_min, maxf(preview_snack_peek_interval_min, preview_snack_peek_interval_max))
             return
         _move_preview_item_toward(kitchen_position, 0.8, delta)
+
+func _update_preview_ruler_hall(delta: float) -> void:
+    if not _preview_ruler_hall_active or not is_instance_valid(_player_target):
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    var camera: Camera3D = _player_target.get("player_camera")
+    if _preview_ruler_hall_spawn_pending:
+        var can_relocate := is_instance_valid(camera)
+        if can_relocate:
+            # Preserve the off-camera rule for both the source and requested spawn.
+            can_relocate = not _monster_body_visible_from_camera(global_position, camera) and not _monster_body_visible_from_camera(_preview_ruler_hall_spawn_position, camera)
+        if can_relocate:
+            global_position = _preview_ruler_hall_spawn_position
+            _preview_ruler_hall_at_science_spawn = _preview_ruler_hall_pending_side_science
+            _preview_ruler_hall_travel_to_science = not _preview_ruler_hall_at_science_spawn
+            _preview_ruler_hall_corner_turn_started = false
+            _preview_ruler_hall_spawn_pending = false
+            _preview_item_last_navigation_target = Vector3(INF, INF, INF)
+
+    var heading_to_science := _preview_ruler_hall_travel_to_science
+    var target: Vector3
+    if heading_to_science:
+        target = _preview_ruler_hall_corner_science if _preview_ruler_hall_corner_turn_started else _preview_ruler_hall_end_science
+    else:
+        target = _preview_ruler_hall_corner_a if _preview_ruler_hall_corner_turn_started else _preview_ruler_hall_end_a
+    target.y = global_position.y
+
+    if not _preview_ruler_hall_corner_turn_started and global_position.distance_to(target) <= 0.8:
+        _preview_ruler_hall_corner_turn_started = true
+        target = _preview_ruler_hall_corner_science if heading_to_science else _preview_ruler_hall_corner_a
+        target.y = global_position.y
+        _preview_item_last_navigation_target = Vector3(INF, INF, INF)
+    elif _preview_ruler_hall_corner_turn_started and global_position.distance_to(target) <= 0.8:
+        if _preview_player_hidden:
+            finish_preview_ruler_hall_event()
+            return
+        _preview_ruler_hall_travel_to_science = not _preview_ruler_hall_travel_to_science
+        heading_to_science = _preview_ruler_hall_travel_to_science
+        _preview_ruler_hall_corner_turn_started = false
+        target = _preview_ruler_hall_end_science if heading_to_science else _preview_ruler_hall_end_a
+        target.y = global_position.y
+        _preview_item_last_navigation_target = Vector3(INF, INF, INF)
+    _move_preview_ruler_hall_toward(target, preview_ruler_hall_speed * _preview_ruler_hall_speed_multiplier, delta)
+
+func _update_ruler_hall_spotlight() -> void:
+    if _preview_player_hidden or not is_instance_valid(_search_cone) or not is_instance_valid(_player_target):
+        return
+    var direction := _player_target.global_position - _search_cone.global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.001:
+        return
+    var target_yaw := atan2(-direction.x, -direction.z)
+    var cone_rotation := _search_cone.global_rotation
+    cone_rotation.y = target_yaw
+    _search_cone.global_rotation = cone_rotation
+
+func finish_preview_ruler_hall_event(preserve_spawn_behavior: bool = false) -> void:
+    _preview_ruler_hall_active = false
+    _preview_ruler_hall_complete = true
+    _preview_ruler_hall_spawn_pending = false
+    _preview_ruler_hall_corner_turn_started = false
+    _preview_ruler_hall_has_relocated_once = false
+    _preview_ruler_hall_return_count = 0
+    _preview_ruler_hall_speed_multiplier = 1.0
+    _preview_item_encounter = &""
+    if not preserve_spawn_behavior:
+        _patrol_active = false
+    velocity = Vector3.ZERO
+    _set_state(&"PATROL")
+
+func _move_preview_ruler_hall_toward(target: Vector3, speed: float, delta: float) -> void:
+    if _preview_item_refresh <= 0.0 or _preview_item_last_navigation_target.distance_to(target) > 0.35:
+        _navigation_agent.target_position = target
+        _preview_item_last_navigation_target = target
+        _preview_item_refresh = 0.25
+    else:
+        _preview_item_refresh = maxf(0.0, _preview_item_refresh - delta)
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    # If the navigation map briefly reports a finished/empty route, keep the
+    # hallway motion going toward the active waypoint instead of freezing.
+    if _navigation_agent.is_navigation_finished() or direction.length_squared() < 0.01:
+        direction = target - global_position
+        direction.y = 0.0
+    if direction.length_squared() < 0.001:
+        return
+    direction = direction.normalized()
+    velocity = direction * speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
 
 func _start_weight_investigation(source_position: Vector3) -> void:
     var target := _preview_clamp_to_encounter_room(source_position)
@@ -562,8 +722,11 @@ func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT)
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
-func set_preview_player_hidden(hidden: bool) -> void:
+func set_preview_player_hidden(hidden: bool, in_hallway_locker: bool = false) -> void:
     _preview_player_hidden = hidden
+    _preview_player_hidden_in_hallway_locker = hidden and in_hallway_locker
+    if not hidden:
+        _preview_ruler_hall_corner_turn_started = false
     if hidden and current_state == &"SHORT_CHASE":
         _lost_sight_time = 0.0
         _set_state(&"PATROL")
@@ -732,11 +895,17 @@ func _physics_process(delta: float) -> void:
         move_and_slide()
         return
 
+    if _preview_ruler_hall_active:
+        _update_ruler_hall_spotlight()
+        if _can_see_from_ruler_spotlight():
+            _set_state(&"SHORT_CHASE")
+            _lost_sight_time = 0.0
+
     if current_state == &"SHORT_CHASE":
         _update_short_chase(delta)
         return
 
-    if _can_see_player() and _preview_item_encounter != &"weight":
+    if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"]:
         var snack_is_peeking := _preview_item_encounter != &"snack" or _preview_snack_phase == &"peeking"
         if snack_is_peeking and (_preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled)):
             if _preview_item_encounter == &"snack":
@@ -750,7 +919,7 @@ func _physics_process(delta: float) -> void:
         _update_preview_item_encounter(delta)
         return
 
-    if _can_see_player() and _preview_item_encounter != &"weight":
+    if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"]:
         _set_state(&"SHORT_CHASE")
         _lost_sight_time = 0.0
         _update_short_chase(delta)
@@ -1032,7 +1201,8 @@ func _update_short_chase(delta: float) -> void:
         _set_state(&"PATROL")
         return
 
-    if _can_see_player():
+    var can_see_target := _can_see_from_ruler_spotlight() if _preview_ruler_hall_active else _can_see_player()
+    if can_see_target:
         _lost_sight_time = 0.0
     else:
         _lost_sight_time += delta
@@ -1073,7 +1243,7 @@ func _update_short_chase(delta: float) -> void:
         move_and_slide()
         return
     direction = direction.normalized()
-    var chase_speed := preview_snack_rush_speed if _preview_item_encounter == &"snack" else preview_short_chase_speed
+    var chase_speed := preview_ruler_spotlight_chase_speed if _preview_ruler_hall_active else (preview_snack_rush_speed if _preview_item_encounter == &"snack" else preview_short_chase_speed)
     velocity = direction * chase_speed
     var centerline_is_clear := _is_centerline_clear(direction)
     move_and_slide()
@@ -1107,6 +1277,24 @@ func _can_see_player() -> bool:
 
     var ray_start := global_position + Vector3.UP * 1.5
     var ray_end := visible_target
+    var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
+    query.collision_mask = 1
+    query.exclude = [get_rid()]
+    var hit := get_world_3d().direct_space_state.intersect_ray(query)
+    return not hit.is_empty() and hit.get("collider") == _player_target
+
+func _can_see_from_ruler_spotlight() -> bool:
+    if _preview_player_hidden or not is_instance_valid(_player_target) or not is_instance_valid(_search_cone):
+        return false
+    var target_local := _search_cone.global_transform.affine_inverse() * _player_target.global_position
+    var forward_distance := -target_local.z
+    if forward_distance <= 0.05 or forward_distance > sight_distance:
+        return false
+    var cone_half_width_at_target := sight_half_width * (forward_distance / sight_distance)
+    if absf(target_local.x) > cone_half_width_at_target:
+        return false
+    var ray_start := _search_cone.global_position + Vector3.UP * 1.5
+    var ray_end := _player_target.global_position + Vector3.UP * 0.75
     var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
     query.collision_mask = 1
     query.exclude = [get_rid()]
