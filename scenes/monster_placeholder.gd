@@ -9,10 +9,15 @@ extends CharacterBody3D
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
 @export_range(0.5, 1.6, 0.05) var preview_squeeze_clearance: float = 1.1
 @export_range(1.0, 3.0, 0.1) var preview_squeeze_probe_distance: float = 2.0
-@export_range(0.15, 0.75, 0.05) var preview_squeeze_width_scale: float = 0.3
-@export_range(1.5, 3.0, 0.1) var preview_squeeze_height: float = 1.8
+@export_range(0.05, 0.75, 0.025) var preview_squeeze_width_scale: float = 0.15
+@export_range(1.0, 3.0, 0.1) var preview_squeeze_height: float = 1.2
+@export_range(2.0, 30.0, 0.5) var preview_door_investigation_radius: float = 10.0
+@export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
+@export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
+@export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
 
 signal monster_state_changed(state_id: StringName)
+signal noise_relocation_requested(source_position: Vector3)
 
 var current_state: StringName = &"PATROL"
 var _patrol_origin: Vector3
@@ -32,6 +37,12 @@ var _capsule_shape: CapsuleShape3D
 var _visual_capsule: MeshInstance3D
 var _base_capsule_height := 3.0
 var _base_capsule_radius := 0.42
+var _investigation_time := 0.0
+var _investigation_target := Vector3.ZERO
+var _resume_hallway_patrol_after_investigation := false
+var _active_safe_room_ids: Array[StringName] = []
+var _bell_lurk_room_id: StringName = &""
+var _bell_lurk_marker_index := 0
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -64,6 +75,20 @@ func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT)
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
+func set_safe_rooms(room_ids: Array[StringName]) -> void:
+    _active_safe_room_ids = room_ids.duplicate()
+    _bell_lurk_room_id = &""
+    _bell_lurk_marker_index = 0
+    if current_state == &"BELL_CHASE":
+        _bell_path_refresh = 0.0
+
+func refresh_preview_navigation() -> void:
+    if current_state == &"INVESTIGATE":
+        _navigation_agent.target_position = _investigation_target
+    elif current_state == &"BELL_CHASE":
+        _has_bell_target = false
+        _bell_path_refresh = 0.0
+
 func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool) -> bool:
     # This is a manual preview hook. Production relocation timing/candidate choice
     # remains a stalking-system decision; Bell chase categorically rejects it.
@@ -82,6 +107,25 @@ func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3
     velocity = Vector3.ZERO
     set_preview_spawn_behavior(in_hallway, _patrol_axis)
     return true
+
+func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7) -> void:
+    if _preview_bell_active or current_state != &"PATROL" or randf() > clampf(loudness, 0.0, 1.0):
+        return
+    var distance := global_position.distance_to(source_position)
+    if distance <= preview_door_investigation_radius:
+        begin_preview_investigation(source_position)
+    else:
+        noise_relocation_requested.emit(source_position)
+
+func begin_preview_investigation(source_position: Vector3) -> void:
+    if _preview_bell_active or current_state in [&"SHORT_CHASE", &"BELL_CHASE"]:
+        return
+    _resume_hallway_patrol_after_investigation = _patrol_active
+    _patrol_active = false
+    _investigation_target = source_position
+    _investigation_time = preview_door_investigation_seconds
+    _navigation_agent.target_position = source_position
+    _set_state(&"INVESTIGATE")
 
 func _monster_body_visible_from_camera(base_position: Vector3, player_camera: Camera3D) -> bool:
     for height in [0.65, 1.5, 2.35]:
@@ -114,6 +158,10 @@ func _physics_process(delta: float) -> void:
         _update_short_chase(delta)
         return
 
+    if current_state == &"INVESTIGATE":
+        _update_investigation(delta)
+        return
+
     if _can_see_player():
         _set_state(&"SHORT_CHASE")
         _lost_sight_time = 0.0
@@ -122,11 +170,53 @@ func _physics_process(delta: float) -> void:
 
     _update_patrol(delta)
 
+func _update_investigation(delta: float) -> void:
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if not _navigation_agent.is_navigation_finished() and direction.length() > _navigation_agent.target_desired_distance and direction.length_squared() > 0.01:
+        direction = direction.normalized()
+        var delta_time := maxf(delta, 0.001)
+        var low_header_ahead := _has_low_overhead_clearance(direction)
+        _update_squeeze(direction, delta_time, low_header_ahead)
+        var centerline_is_clear := _is_centerline_clear(direction)
+        velocity = direction * preview_door_investigation_speed
+        move_and_slide()
+        look_at(global_position + direction, Vector3.UP)
+        var squeezed_against_doorway := low_header_ahead
+        for collision_index in get_slide_collision_count():
+            if absf(get_slide_collision(collision_index).get_normal().y) < 0.5 and centerline_is_clear:
+                squeezed_against_doorway = true
+                break
+        _update_squeeze(direction, delta_time, squeezed_against_doorway)
+    else:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        var toward_noise := _investigation_target - global_position
+        toward_noise.y = 0.0
+        _update_squeeze(toward_noise, delta, _has_low_overhead_clearance(toward_noise))
+        if toward_noise.length_squared() > 0.01:
+            look_at(global_position + toward_noise.normalized(), Vector3.UP)
+        _investigation_time -= delta
+        if _investigation_time <= 0.0:
+            if _resume_hallway_patrol_after_investigation:
+                start_preview_hallway_patrol(_patrol_axis)
+            else:
+                _set_state(&"PATROL")
+            _squeeze_amount = 0.0
+            _apply_squeeze_shape()
+
 func _update_bell_chase() -> void:
     if not is_instance_valid(_player_target):
         velocity = Vector3.ZERO
         move_and_slide()
         return
+
+    var safe_room_id := _preview_safe_room_at(_player_target.global_position)
+    if safe_room_id != &"":
+        _update_window_lurk(safe_room_id)
+        return
+    _bell_lurk_room_id = &""
+    _navigation_agent.target_desired_distance = 0.5
 
     _bell_path_refresh -= get_physics_process_delta_time()
     if _bell_path_refresh <= 0.0:
@@ -153,6 +243,9 @@ func _update_bell_chase() -> void:
         return
 
     direction = direction.normalized()
+    var delta_time := get_physics_process_delta_time()
+    var low_header_ahead := _has_low_overhead_clearance(direction)
+    _update_squeeze(direction, delta_time, low_header_ahead)
     velocity = direction * preview_bell_chase_speed
     var centerline_is_clear := _is_centerline_clear(direction)
     move_and_slide()
@@ -162,7 +255,67 @@ func _update_bell_chase() -> void:
         if absf(get_slide_collision(collision_index).get_normal().y) < 0.5 and centerline_is_clear:
             squeezed_against_doorway = true
             break
-    _update_squeeze(direction, get_physics_process_delta_time(), squeezed_against_doorway)
+    _update_squeeze(direction, delta_time, squeezed_against_doorway or low_header_ahead)
+
+func _preview_safe_room_at(world_position: Vector3) -> StringName:
+    for floor_node in get_tree().get_nodes_in_group("preview_safe_room_floors"):
+        var room_id: StringName = floor_node.get_meta("preview_room_id", &"")
+        if not _active_safe_room_ids.has(room_id):
+            continue
+        var bounds: AABB = floor_node.get_meta("preview_room_bounds")
+        if (world_position.x >= bounds.position.x and world_position.x <= bounds.end.x
+                and world_position.z >= bounds.position.z and world_position.z <= bounds.end.z):
+            return room_id
+    return &""
+
+func _update_window_lurk(room_id: StringName) -> void:
+    var markers: Array[Node] = []
+    for marker in get_tree().get_nodes_in_group("preview_bell_lurk_points"):
+        if marker.get_meta("preview_room_id", &"") == room_id:
+            markers.append(marker)
+    if markers.is_empty():
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    markers.sort_custom(func(a: Node, b: Node) -> bool:
+        return float(a.get_meta("lurk_angle", 0.0)) < float(b.get_meta("lurk_angle", 0.0))
+    )
+    if _bell_lurk_room_id != room_id:
+        _bell_lurk_room_id = room_id
+        _bell_lurk_marker_index = 0
+        _navigation_agent.target_desired_distance = 0.35
+        var nearest_distance := INF
+        for index in markers.size():
+            var distance := global_position.distance_squared_to((markers[index] as Node3D).global_position)
+            if distance < nearest_distance:
+                nearest_distance = distance
+                _bell_lurk_marker_index = index
+        _navigation_agent.target_position = (markers[_bell_lurk_marker_index] as Node3D).global_position
+    var marker_target := (markers[_bell_lurk_marker_index] as Node3D).global_position
+    var to_marker := marker_target - global_position
+    to_marker.y = 0.0
+    if to_marker.length() <= 0.55:
+        _bell_lurk_marker_index = (_bell_lurk_marker_index + 1) % markers.size()
+        marker_target = (markers[_bell_lurk_marker_index] as Node3D).global_position
+        _navigation_agent.target_position = marker_target
+        to_marker = marker_target - global_position
+        to_marker.y = 0.0
+    if to_marker.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.01:
+        direction = to_marker
+    direction = direction.normalized()
+    var delta_time := get_physics_process_delta_time()
+    var low_header_ahead := _has_low_overhead_clearance(direction)
+    _update_squeeze(direction, delta_time, low_header_ahead)
+    velocity = direction * preview_bell_window_lurk_speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
+    _update_squeeze(direction, delta_time, low_header_ahead)
 
 func _update_squeeze(direction: Vector3, delta: float, force_squeeze: bool = false) -> void:
     var target_squeeze := 1.0 if force_squeeze else 0.0
@@ -184,6 +337,9 @@ func _update_squeeze(direction: Vector3, delta: float, force_squeeze: bool = fal
         _squeeze_amount = 1.0
     else:
         _squeeze_amount = move_toward(_squeeze_amount, target_squeeze, delta * 5.0)
+    _apply_squeeze_shape()
+
+func _apply_squeeze_shape() -> void:
     var width_scale := lerpf(1.0, preview_squeeze_width_scale, _squeeze_amount)
     var height_squeeze := clampf(_squeeze_amount * 1.5, 0.0, 1.0)
     var height := lerpf(_base_capsule_height, preview_squeeze_height, height_squeeze)
@@ -198,6 +354,19 @@ func _is_centerline_clear(direction: Vector3) -> bool:
     var ray_end := ray_start + direction * 0.6
     var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end, 1, [get_rid()])
     return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+func _has_low_overhead_clearance(direction: Vector3) -> bool:
+    direction.y = 0.0
+    var probe_positions: Array[Vector3] = [global_position]
+    if direction.length_squared() >= 0.001:
+        probe_positions.append(global_position + direction.normalized() * (_base_capsule_radius + 0.25))
+    for probe_position in probe_positions:
+        var ray_start := probe_position + Vector3.UP * (preview_squeeze_height - 0.05)
+        var ray_end := probe_position + Vector3.UP * (_base_capsule_height - 0.05)
+        var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end, 1, [get_rid()])
+        if not get_world_3d().direct_space_state.intersect_ray(query).is_empty():
+            return true
+    return false
 
 func _side_clearance(ray_start: Vector3, direction: Vector3) -> float:
     var query := PhysicsRayQueryParameters3D.create(
@@ -286,6 +455,9 @@ func _set_state(next_state: StringName) -> void:
     if current_state == next_state:
         return
     current_state = next_state
+    if next_state == &"PATROL":
+        _squeeze_amount = 0.0
+        _apply_squeeze_shape()
     monster_state_changed.emit(current_state)
 
 func _create_opaque_search_cone() -> void:
