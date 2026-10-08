@@ -140,3 +140,9 @@ This log records the school-model and Godot-preview work completed with the user
 - Added a 15-second no-progress timer during INVESTIGATE. The progress check measures distance to the active sound target, so normal movement toward it resets the timer.
 - When stuck, the monster retries the existing spawn relocation path once per second. That path still rejects a move if the monster's current body or destination is visible from the player camera; wall occlusion is accepted. It remains disabled during Bell.
 - Godot headless startup is used to check script parsing and preview initialization; the fallback logic is not yet exercised with a dedicated automated test.
+
+## Investigation vision and noise awareness (2026-10-07)
+
+- Moved player visibility checks ahead of the INVESTIGATE branch. If the player is visible in the search cone, investigation now transitions to SHORT_CHASE immediately.
+- Nearby quiet walking and loud running events during INVESTIGATE set a short look target toward the sound source. Patrol's 30%/70% response behavior remains unchanged.
+- The headless Godot editor scan found no GDScript parse errors.

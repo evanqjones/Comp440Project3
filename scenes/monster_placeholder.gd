@@ -128,10 +128,17 @@ func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7)
         noise_relocation_requested.emit(source_position)
 
 func receive_noise(event: NoiseEvent) -> void:
+    if _preview_bell_active:
+        return
+    if current_state == &"INVESTIGATE":
+        if global_position.distance_to(event.source_position) <= preview_door_investigation_radius:
+            _quiet_noise_look_position = event.source_position
+            _quiet_noise_look_time = preview_quiet_noise_turn_seconds
+        return
     if event.level == NoiseEvent.NoiseLevel.LOUD:
         receive_preview_door_noise(event.source_position, 0.7)
         return
-    if _preview_bell_active or current_state != &"PATROL" or randf() > 0.3:
+    if current_state != &"PATROL" or randf() > 0.3:
         return
     if global_position.distance_to(event.source_position) > preview_door_investigation_radius:
         return
@@ -182,21 +189,22 @@ func _physics_process(delta: float) -> void:
         _update_short_chase(delta)
         return
 
-    if current_state == &"INVESTIGATE":
-        _update_investigation(delta)
-        return
-
     if _can_see_player():
         _set_state(&"SHORT_CHASE")
         _lost_sight_time = 0.0
         _update_short_chase(delta)
         return
 
+    if current_state == &"INVESTIGATE":
+        _update_investigation(delta)
+        _update_quiet_noise_look(delta)
+        return
+
     _update_patrol(delta)
     _update_quiet_noise_look(delta)
 
 func _update_quiet_noise_look(delta: float) -> void:
-    if _quiet_noise_look_time <= 0.0 or current_state != &"PATROL":
+    if _quiet_noise_look_time <= 0.0 or current_state not in [&"PATROL", &"INVESTIGATE"]:
         return
     _quiet_noise_look_time = maxf(0.0, _quiet_noise_look_time - delta)
     var direction := _quiet_noise_look_position - global_position
