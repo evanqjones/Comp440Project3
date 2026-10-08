@@ -185,6 +185,7 @@ func _relocate_nearest_spawn_to_noise(source_position: Vector3) -> void:
 	for marker in candidates:
 		if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, _is_hallway_spawn(marker)):
 			print("Monster relocated off-camera to investigate door noise: %s" % marker.get_meta("spawn_id", marker.name))
+			monster.begin_preview_investigation(source_position)
 			return
 
 func _unhandled_input(event: InputEvent) -> void:

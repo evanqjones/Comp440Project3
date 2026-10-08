@@ -99,3 +99,9 @@ This log records the school-model and Godot-preview work completed with the user
 - The Locker Room hallway door is the only auto-closing door. It remains open until the player clears the doorway, waits a provisional 1 second, swings shut over 1.8 seconds, then restores collision. It still cannot be opened from the hallway side.
 - The GDD says doors never close; this Locker Room-only close behavior follows the user's explicit exception. The hold time is provisional.
 - Headless behavior check passed on the Auditorium double door and Classroom A single door: both triggered at 0.35 m, swung away from the player, released collision, and allowed the capsule to cross. The Locker Room door ignored the hallway side, opened from inside, stayed open while occupied, then closed and restored collision after the player passed through.
+
+## Monster approaches distant door noise (2026-10-07)
+
+- After a successful off-camera relocation to the spawn nearest a far door sound, the monster now enters INVESTIGATE and follows its navigation path toward that doorway at a provisional 0.5 m/s.
+- Nearby noise uses the same investigation path. Its investigation timer now starts after arrival so a slow approach is not cut short; hallway pacing resumes afterward if the monster had been pacing before the noise.
+- Headless behavior check started the monster at a hallway spawn 6.01 m from the Auditorium door. After 120 frames it remained in INVESTIGATE, had moved 0.44 m, and was 5.60 m from the sound.
