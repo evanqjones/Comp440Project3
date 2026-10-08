@@ -223,6 +223,17 @@ This log records the school-model and Godot-preview work completed with the user
 - Fixed the reported missing-floor warning by aligning the Brush/Artroom lookup with `Cafeteria Floor` (the floor carrying the Artroom label) and the Snack/Cafeteria lookup with `Cafe Floor` (the floor carrying the Cafeteria label). Updated room registration, cafeteria window markers, and excluded-floor lists to follow those names. Headless scene load now reports no script parse or missing-floor warnings; environment log/certificate-store warnings persist.
 - Consolidated final behavior/status: six open-front locker placeholders; E hides/exits safely; nearby item pickup takes priority on E; Weight is at the north; the Weight encounter patrols northâ€“south, investigates any noise and returns to patrol without chasing; Weight pickup sends the monster running to the Gym at 3.5 m/s, after which the regular relocation timer resumes. Brush/Artroom and Snack/Cafeteria room-floor mappings match the Blender model. Changed files are `scenes/school_blockout_preview.gd`, `scenes/monster_placeholder.gd`, and `After-School-AI-GDD/docs/PROGRESS.md`. Headless scene load had no script-parse or missing-floor warnings. Interactive route/door traversal remains unchecked; closed doors block the monster.
 
+## Cafeteria Snack kitchen peek encounter (2026-10-08)
+
+- Read the Snack interaction notes: use cafeteria tables/counters/serving area as line-of-sight cover and crouch while crossing. The user specified the Snack marker at the northwest and revised the behavior to have the monster peek from the kitchen on a timer, rushing exposed players.
+- Moved the Snack pickup circle to the Cafeteria northwest. Opened the kitchen's south wall into a wide serving pass-through with a counter, and added three long collidable tables as cover. Geometry is generated in the Godot preview before the navmesh bake.
+- The monster waits in the kitchen, approaches the serving opening after a random 3–5 second delay, and checks line of sight during a 1.5-second peek. If it sees the player, it rushes at 7 m/s; breaking line of sight lets it return to the kitchen. Crouching lowers the sight-ray target behind table cover. Sight distance/width, peek interval/duration, and rush speed are exported temporary settings.
+- Changed scenes/school_blockout_preview.gd, scenes/monster_placeholder.gd, and After-School-AI-GDD/docs/PROGRESS.md. git diff --check passed. Gameplay verification was not run; the kitchen entrance, navigation route, and table sightlines remain to be checked in the running preview.
+
+- Follow-up: Added two editable cafeteria tables and a west-side kitchen pass-through in assets.blend; aligned the Godot preview with Blender and removed the middle table.
+- Follow-up: The monster now stays at one kitchen watch point, turns toward the south and west openings on timed intervals, and uses a 6 m spotlight half-width. When spotted, it pathfinds through an opening and compresses under the low header, then returns to its watch point after losing sight.
+- No Godot runtime verification was run for these follow-ups.
+
 ## Ruler hallway locker encounter (2026-10-08)
 
 - Changed the preview Ruler so its encounter begins on pickup rather than on entry to Classroom B. Pickup queues an off-camera spawn in the hall in front of Classroom A; the monster then follows the player through navigation at 0.55 m/s. If the player progresses around the hall toward Science, it queues an off-camera fallback spawn in front of the Science Classroom and follows from there.
