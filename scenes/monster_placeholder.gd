@@ -9,8 +9,8 @@ extends CharacterBody3D
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
 @export_range(0.5, 1.6, 0.05) var preview_squeeze_clearance: float = 1.1
 @export_range(1.0, 3.0, 0.1) var preview_squeeze_probe_distance: float = 2.0
-@export_range(0.15, 0.75, 0.05) var preview_squeeze_width_scale: float = 0.3
-@export_range(1.5, 3.0, 0.1) var preview_squeeze_height: float = 1.8
+@export_range(0.05, 0.75, 0.025) var preview_squeeze_width_scale: float = 0.15
+@export_range(1.0, 3.0, 0.1) var preview_squeeze_height: float = 1.2
 @export_range(2.0, 30.0, 0.5) var preview_door_investigation_radius: float = 10.0
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
