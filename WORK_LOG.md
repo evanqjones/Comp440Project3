@@ -83,3 +83,25 @@ This log records the school-model and Godot-preview work completed with the user
 - Added a temporary green spawn panel that tracks a candidate point 4 m behind the player camera. It only becomes a candidate when the point stays behind the camera, is within 0.8 m of the navigation surface, is outside all excluded room/outside floor bounds, and remains within 8 m of a known hallway spawn zone.
 - The moving point joins the hallway candidates, retaining the existing 75% hallway-first relocation preference. If it cannot find a safe hallway point, it is hidden and skipped.
 - Verified in the live Godot preview that the moving point becomes valid behind the camera in the Lobby and remains on the hallway navigation surface. Godot reported no editor errors.
+
+## Automatic preview doors and monster noise (2026-10-07)
+
+- Added runtime door panels to the 24 unique modeled doorway headers. Wide openings use double leaves; narrower openings use one leaf. Panels block the doorway and open once over a provisional 1.8 seconds when the player approaches within 2.0 m; their collision releases when the opening animation finishes.
+- Kept the Locker Room to hallway door one-way: the player must approach from the Locker Room side to open it.
+- Opening a door emits one preview noise event at 0.7 strength. The monster has a 70% response chance: within a provisional 10 m radius it turns and walks toward the sound for up to 6 seconds; farther away it tries spawn panels nearest the door first. Relocation continues to require an off-camera destination and valid navigation point, and is blocked during Bell/chase.
+- Added tunable export values for investigation radius/duration and opening duration/trigger distance. The preview door noise probability and strength are the user's requested 70%; investigation range/duration are temporary values pending tuning.
+- Godot headless editor import and preview launch completed with no script/navigation errors. Godot printed environment warnings because its user log directory and Windows certificate store are unavailable in this sandbox.
+- Fixed doorway traversal after the initial mechanic pass: extended the approach distance to 2.0 m and disabled the leaves' collision after they finish opening. A headless CharacterBody movement check crossed a double Auditorium door and a single Classroom A door; it confirmed the Locker Room hallway door stays closed from the hall side and opens/pass-through works from the Locker Room side.
+
+## Door push direction and Locker Room return (2026-10-07)
+
+- Changed the approach threshold to 0.5 m so a door opens when the capsule reaches it. Door leaves now swing away from the player's side in the direction of the push.
+- The Locker Room hallway door is the only auto-closing door. It remains open until the player clears the doorway, waits a provisional 1 second, swings shut over 1.8 seconds, then restores collision. It still cannot be opened from the hallway side.
+- The GDD says doors never close; this Locker Room-only close behavior follows the user's explicit exception. The hold time is provisional.
+- Headless behavior check passed on the Auditorium double door and Classroom A single door: both triggered at 0.35 m, swung away from the player, released collision, and allowed the capsule to cross. The Locker Room door ignored the hallway side, opened from inside, stayed open while occupied, then closed and restored collision after the player passed through.
+
+## Monster approaches distant door noise (2026-10-07)
+
+- After a successful off-camera relocation to the spawn nearest a far door sound, the monster now enters INVESTIGATE and follows its navigation path toward that doorway at a provisional 0.5 m/s.
+- Nearby noise uses the same investigation path. Its investigation timer now starts after arrival so a slow approach is not cut short; hallway pacing resumes afterward if the monster had been pacing before the noise.
+- Headless behavior check started the monster at a hallway spawn 6.01 m from the Auditorium door. After 120 frames it remained in INVESTIGATE, had moved 0.44 m, and was 5.60 m from the sound.
