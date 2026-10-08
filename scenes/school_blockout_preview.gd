@@ -16,6 +16,7 @@ const NORMAL_AMBIENT := Color(0.55, 0.62, 0.75, 1.0)
 const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
+const RULER_HALL_TIMEOUT_SECONDS := 20.0
 const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
 const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
 const PREVIEW_ITEMS: Array[Dictionary] = [
@@ -24,7 +25,7 @@ const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"book", "name": "Book", "room": &"library", "floor": "library floor", "encounter": &"book", "u": 0.9, "v": 0.1},
 	{"id": &"brush", "name": "Brush", "room": &"artroom", "floor": "cafeteria floor", "encounter": &"brush", "u": 0.5, "v": 0.5},
 	{"id": &"lab_coat", "name": "Lab Coat", "room": &"lab_room", "floor": "lab room floor", "encounter": &"", "u": 0.12, "v": 0.12},
-	{"id": &"ruler", "name": "Ruler", "room": &"classroom_b", "floor": "classroom b floor", "encounter": &"ruler", "u": 0.5, "v": 0.5},
+	{"id": &"ruler", "name": "Ruler", "room": &"classroom_b", "floor": "classroom b floor", "encounter": &"", "u": 0.5, "v": 0.5},
 	{"id": &"snack", "name": "Snack", "room": &"cafeteria", "floor": "cafe floor", "encounter": &"snack", "u": 0.5, "v": 0.5},
 	{"id": &"front_door_key", "name": "Front Door Key", "room": &"storage_closet", "floor": "storage closet floor", "encounter": &"final_key", "u": 0.5, "v": 0.5}
 ]
@@ -94,12 +95,20 @@ var _player_locker_return_position := Vector3.ZERO
 var _player_locker_return_visible := true
 var _player_locker_return_layer := 1
 var _player_locker_return_mask := 1
+var _ruler_hall_event_active := false
+var _ruler_hall_elapsed := 0.0
+var _ruler_hall_fallback_retry_elapsed := 0.0
+var _ruler_hall_fallback_pending := false
+var _ruler_hall_monster_at_science_end := false
+var _ruler_hall_locker_z_min := 0.0
+var _ruler_hall_locker_z_max := 0.0
 
 func _ready() -> void:
 	_load_school_model()
 	if generate_school_collision:
 		_add_school_collisions(school)
 	_create_school_doors()
+	_create_ruler_hallway_lockers()
 	_build_school_navigation()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -125,6 +134,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_update_preview_item_encounter()
 	_update_locker_prompt()
+	_update_ruler_hall_event(delta)
 	_try_science_room_encounter_spawn()
 	_try_science_window_stalk_spawn()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
@@ -218,6 +228,9 @@ func _update_preview_item_encounter() -> void:
 	if _final_bell_started:
 		item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
 		return
+	if _ruler_hall_event_active:
+		item_help.text = "Ruler encounter: hide in one of the six hallway lockers"
+		return
 	var science_bounds: AABB = _item_room_bounds.get(&"science_classroom", AABB())
 	var player_in_science := science_bounds.size != Vector3.ZERO and _point_inside_room(player.global_position, science_bounds)
 	if player_in_science and not _collected_preview_items.has(&"lab_coat"):
@@ -280,7 +293,6 @@ func _item_encounter_points(bounds: AABB, encounter: StringName) -> Array[Vector
 		&"book": fractions = [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.8, 0.8), Vector2(0.2, 0.8)]
 		&"brush": fractions = [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.8, 0.8), Vector2(0.2, 0.8), Vector2(0.5, 0.25)]
 		&"science_classroom": fractions = [Vector2(0.88, 0.88)]
-		&"ruler": fractions = [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.75, 0.75), Vector2(0.25, 0.75)]
 		&"snack": fractions = [Vector2(0.2, 0.25), Vector2(0.8, 0.25), Vector2(0.8, 0.75), Vector2(0.2, 0.75)]
 	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
 	var result: Array[Vector3] = []
@@ -301,7 +313,6 @@ func _encounter_hint(encounter: StringName) -> String:
 		&"book": return "Maze: monster slowly searches; it vanishes when the Book is collected"
 		&"brush": return "Don't disturb the room: look away and it may switch figures"
 		&"science_classroom": return "Sneak past the southeast corner; walking or running slowly turns its spotlight"
-		&"ruler": return "Darkness: follow the glowing smile as it shifts around the room"
 		&"snack": return "Line of sight: monster patrols between tables; use cover"
 	return ""
 
@@ -351,6 +362,9 @@ func _try_collect_preview_item() -> bool:
 	if item_id == &"lab_coat":
 		_start_lab_coat_window_slide()
 	_active_preview_encounter = &""
+	if item_id == &"ruler":
+		_start_ruler_hall_event()
+		return true
 	if item_id == &"front_door_key":
 		_science_window_spawn_pending = false
 		_final_bell_started = true
@@ -393,7 +407,36 @@ func _create_locker_placeholders() -> void:
 		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, -width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
 		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
 		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height, 0.0), Vector3(depth, 0.1, width), Color(0.36, 0.46, 0.54))
-		_locker_spots.append({"node": locker, "inside": center + Vector3(face_inward * depth * 0.15, 0.0, 0.0), "outside": center + Vector3(face_inward * (depth + 0.72), 0.0, 0.0), "normal": Vector3(face_inward, 0.0, 0.0)})
+		_locker_spots.append({"node": locker, "inside": center + Vector3(face_inward * depth * 0.15, 0.0, 0.0), "outside": center + Vector3(face_inward * (depth + 0.72), 0.0, 0.0), "normal": Vector3(face_inward, 0.0, 0.0), "hallway": false})
+
+func _create_ruler_hallway_lockers() -> void:
+	var science_floor := _find_room_floor(school, "science classroom floor")
+	if science_floor == null or science_floor.mesh == null:
+		return
+	var bounds: AABB = science_floor.global_transform * science_floor.mesh.get_aabb()
+	# Six lockers sit below the narrow high window along the east hallway wall.
+	# Their open faces point west into the corridor; the row keeps a clear aisle.
+	var wall_x := 40.0
+	var first_z := 3.8
+	var last_z := 15.0
+	# Keep the gaps between shells too narrow for the baked nav agent so it routes around the row ends.
+	var width := 2.1
+	var depth := 0.78
+	var height := 2.05
+	_ruler_hall_locker_z_min = first_z - width * 0.5
+	_ruler_hall_locker_z_max = last_z + width * 0.5
+	for index in range(6):
+		var center := Vector3(wall_x, bounds.end.y, lerpf(first_z, last_z, float(index) / 5.0))
+		var face_inward := -1.0
+		var locker := Node3D.new()
+		locker.name = "RulerHallLocker_%02d" % (index + 1)
+		locker.position = center
+		school.add_child(locker)
+		_add_locker_panel(locker, Vector3(-face_inward * depth * 0.42, height * 0.5, 0.0), Vector3(0.12, height, width), Color(0.25, 0.34, 0.42))
+		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, -width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
+		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
+		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height, 0.0), Vector3(depth, 0.1, width), Color(0.36, 0.46, 0.54))
+		_locker_spots.append({"node": locker, "inside": center + Vector3(face_inward * depth * 0.15, 0.0, 0.0), "outside": center + Vector3(face_inward * (depth + 0.72), 0.0, 0.0), "normal": Vector3(face_inward, 0.0, 0.0), "hallway": true})
 
 func _add_locker_panel(parent: Node3D, local_position: Vector3, size: Vector3, color: Color) -> void:
 	var panel := MeshInstance3D.new()
@@ -430,16 +473,16 @@ func _try_toggle_locker_hide() -> bool:
 		player.collision_layer = _player_locker_return_layer
 		player.collision_mask = _player_locker_return_mask
 		player.set_physics_process(true)
-		monster.set_preview_player_hidden(false)
+		monster.set_preview_player_hidden(false, false)
 		_active_locker_index = -1
 		item_help.text = "You left the locker"
 		return true
-	if not _item_room_bounds.has(&"locker_room") or not _point_inside_room(player.global_position, _item_room_bounds[&"locker_room"]):
-		return false
 	var closest_index := -1
 	var closest_distance := INF
 	for index in _locker_spots.size():
 		var spot: Dictionary = _locker_spots[index]
+		if _ruler_hall_event_active and not bool(spot.get("hallway", false)):
+			continue
 		var distance: float = player.global_position.distance_to(spot["outside"])
 		if distance < closest_distance:
 			closest_distance = distance
@@ -456,7 +499,7 @@ func _try_toggle_locker_hide() -> bool:
 	player.collision_layer = 0
 	player.collision_mask = 0
 	player.set_physics_process(false)
-	monster.set_preview_player_hidden(true)
+	monster.set_preview_player_hidden(true, bool(selected.get("hallway", false)))
 	_active_locker_index = closest_index
 	item_help.text = "Hidden in locker | E: leave locker"
 	return true
@@ -465,12 +508,92 @@ func _update_locker_prompt() -> void:
 	if _active_locker_index >= 0:
 		item_help.text = "Hidden in locker | E: leave locker"
 		return
-	if not _item_room_bounds.has(&"locker_room") or not _point_inside_room(player.global_position, _item_room_bounds[&"locker_room"]):
-		return
 	for spot in _locker_spots:
+		if _ruler_hall_event_active and not bool(spot.get("hallway", false)):
+			continue
 		if player.global_position.distance_to(spot["outside"]) <= 1.5:
 			item_help.text = "Locker | E: hide"
 			return
+
+func _start_ruler_hall_event() -> void:
+	var a_bounds: AABB = _item_room_bounds.get(&"classroom_a", AABB())
+	var science_bounds: AABB = _item_room_bounds.get(&"science_classroom", AABB())
+	if a_bounds.size == Vector3.ZERO or science_bounds.size == Vector3.ZERO:
+		push_warning("Ruler encounter could not start because its hallway room bounds are missing.")
+		return
+	var a_desired := Vector3(a_bounds.position.x + a_bounds.size.x * 0.5, a_bounds.end.y, a_bounds.end.z + 0.9)
+	var science_desired := _science_classroom_doorway_spawn(science_bounds)
+	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
+	var beyond_science_desired := Vector3(38.2, science_bounds.end.y, _ruler_hall_locker_z_max + 0.35)
+	var beyond_a_desired := Vector3(38.2, science_bounds.end.y, _ruler_hall_locker_z_min - 0.35)
+	var science_corner_desired := Vector3(36.5, science_bounds.end.y, _ruler_hall_locker_z_max + 0.35)
+	var a_corner_desired := Vector3(36.5, science_bounds.end.y, _ruler_hall_locker_z_min - 0.35)
+	var a_spawn: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, a_desired)
+	var science_spawn: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, science_desired)
+	var beyond_science: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, beyond_science_desired)
+	var beyond_a: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, beyond_a_desired)
+	var science_corner: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, science_corner_desired)
+	var a_corner: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, a_corner_desired)
+	if a_spawn.distance_to(a_desired) > 2.0 or science_spawn.distance_to(science_desired) > 2.0 or beyond_science.distance_to(beyond_science_desired) > 2.0 or beyond_a.distance_to(beyond_a_desired) > 2.0 or science_corner.distance_to(science_corner_desired) > 2.0 or a_corner.distance_to(a_corner_desired) > 2.0:
+		push_warning("Ruler encounter navigation points could not be placed on the school navigation mesh.")
+		return
+	monster.begin_preview_ruler_hall_event(a_spawn, science_spawn, beyond_science, beyond_a, science_corner, a_corner)
+	_ruler_hall_event_active = true
+	_ruler_hall_elapsed = 0.0
+	_ruler_hall_fallback_retry_elapsed = 0.0
+	_ruler_hall_fallback_pending = false
+	_ruler_hall_monster_at_science_end = false
+	_preview_relocation_elapsed = 0.0
+	_active_preview_encounter = &"ruler_hall"
+	item_help.text = "Ruler collected | Monster approaching: hide in a hallway locker"
+
+func _science_classroom_doorway_spawn(science_bounds: AABB) -> Vector3:
+	var best_position := Vector3(science_bounds.position.x + science_bounds.size.x * 0.08, science_bounds.end.y, science_bounds.end.z + 1.1)
+	var best_distance := INF
+	for candidate in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door := candidate as Node3D
+		if door == null:
+			continue
+		var door_id := String(door.get("door_id")).to_lower()
+		if not door_id.contains("science classroom"):
+			continue
+		var south_wall_distance := absf(door.global_position.z - science_bounds.end.z)
+		if south_wall_distance >= best_distance:
+			continue
+		best_distance = south_wall_distance
+		# In this blockout, south is the positive-Z side of the classroom.
+		best_position = door.global_position + Vector3.BACK * 1.1
+	return best_position
+
+func _update_ruler_hall_event(delta: float) -> void:
+	if not _ruler_hall_event_active:
+		return
+	_ruler_hall_elapsed += delta
+	if _ruler_hall_elapsed >= RULER_HALL_TIMEOUT_SECONDS:
+		_ruler_hall_fallback_pending = true
+	if _ruler_hall_fallback_pending:
+		_ruler_hall_fallback_retry_elapsed += delta
+		item_help.text = "Ruler encounter timeout: waiting for an off-camera teleport"
+		if _ruler_hall_fallback_retry_elapsed >= 0.25:
+			_ruler_hall_fallback_retry_elapsed = 0.0
+			if _try_debug_offscreen_relocation():
+				monster.finish_preview_ruler_hall_event(true)
+				_ruler_hall_event_active = false
+				_active_preview_encounter = &""
+				_preview_relocation_elapsed = 0.0
+				_ruler_hall_fallback_pending = false
+				item_help.text = "Ruler encounter timed out | Monster relocated off-camera"
+				return
+	if not _ruler_hall_fallback_pending and _active_locker_index < 0 and player.global_position.x > 35.0:
+		var player_at_science_end := player.global_position.z > (_ruler_hall_locker_z_min + _ruler_hall_locker_z_max) * 0.5
+		if player_at_science_end != _ruler_hall_monster_at_science_end:
+			monster.request_preview_ruler_hall_spawn(player_at_science_end)
+			_ruler_hall_monster_at_science_end = player_at_science_end
+	if monster.is_preview_ruler_hall_complete():
+		_ruler_hall_event_active = false
+		_active_preview_encounter = &""
+		_preview_relocation_elapsed = 0.0
+		item_help.text = "The monster passed the lockers | Ruler encounter complete"
 
 func _try_science_window_stalk_spawn() -> void:
 	if not _science_window_spawn_pending or _bell_debug_active:
@@ -1016,9 +1139,9 @@ func _position_in_excluded_floor(position: Vector3, excluded_names: Array[String
 			return true
 	return false
 
-func _try_debug_offscreen_relocation() -> void:
+func _try_debug_offscreen_relocation() -> bool:
 	if _bell_debug_active or (_spawn_markers.is_empty() and not _camera_hallway_spawn_valid):
-		return
+		return false
 	var hallway_markers: Array[Node3D] = []
 	var other_markers: Array[Node3D] = []
 	if _camera_hallway_spawn_valid:
@@ -1033,20 +1156,21 @@ func _try_debug_offscreen_relocation() -> void:
 		hallway_markers.shuffle()
 		for marker in hallway_markers:
 			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
-				return
+				return true
 		other_markers.shuffle()
 		for marker in other_markers:
 			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, false):
-				return
+				return true
 	else:
 		other_markers.shuffle()
 		for marker in other_markers:
 			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, false):
-				return
+				return true
 		hallway_markers.shuffle()
 		for marker in hallway_markers:
 			if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
-				return
+				return true
+	return false
 
 func _is_hallway_spawn(marker: Node3D) -> bool:
 	var spawn_kind := String(marker.get_meta("spawn_kind", ""))
