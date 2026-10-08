@@ -23,6 +23,7 @@ const PREVIEW_TARGET_ID_META: StringName = &"player_preview_target_id"
 @onready var player_camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
 @onready var interaction_prompt: Label = $InteractionPrompt/Label
 @onready var capture_status: Label = $InteractionPrompt/CaptureStatus
+@onready var stamina_hud: CanvasLayer = $StaminaHUD
 
 signal noise_emitted(event: NoiseEvent)
 
@@ -48,6 +49,8 @@ func _ready() -> void:
     player_camera.current = true
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     capture_status.visible = _capture_presentation_active
+    stamina_state_changed.connect(stamina_hud.update_stamina)
+    stamina_hud.update_stamina(stamina_current, stamina_capacity, stamina_exhausted)
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
