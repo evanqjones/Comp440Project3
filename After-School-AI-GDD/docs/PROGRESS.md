@@ -168,3 +168,15 @@
 - **Auditorium door restored to standard behavior (2026-10-08):** Removed the encounter's initial lock and special trigger distance so the south door uses the same automatic proximity opening as every other preview door. After the escape ends, it locks and slams shut, preventing it from reopening. No runtime play-check was performed.
 - **Microphone noise response turn (2026-10-08):** Increased the monster's turn rate while reacting to noise to 90 degrees per second. Its regular turn speed is unchanged. No runtime play-check was performed.
 - **Microphone pursuit spotlight aim (2026-10-08):** During B-line/chase movement, the monster now turns its facing toward the player's current position so its searchlight tracks the player while navigation moves around obstacles. No runtime play-check was performed.
+
+## Artroom Brush ceiling search preview (2026-10-08)
+
+- After the Brush is collected, the monster leaves its Artroom figure behavior and hangs upside down from the room ceiling above its center. A narrow, opaque triangular searchlight sweeps around the floor from the room center.
+- The Artroom's Cafeteria-labeled hallway door closes and becomes one-way from the hallway side after pickup. The player must leave through the nearby Bathroom door, then reach the circulation hallway. The controller restores the monster's normal ground position, collision, and preview AI at that point; the standard off-camera relocation timer restarts.
+- Changed `scenes/artroom_brush_encounter.gd`, `scenes/school_blockout_preview.gd`, `scenes/preview_school_door.gd`, and this log. No Godot runtime or interactive route verification was performed; the ceiling height, bathroom path, and door swing need an in-game check.
+
+- **Artroom Brush spotlight chase (2026-10-08):** The floor searchlight now detects the player inside its swept triangular area when no wall blocks sight. Detection stops the sweep and makes the monster drop to floor height and B-line toward the player at its normal chase speed. Godot headless scene load completed without script errors; interactive detection still needs play verification.
+
+- **Artroom Brush chase visibility fix (2026-10-08):** When the floor spotlight detects the player, the monster is now made visible, set upright at floor height, and its physics processing is re-enabled before it chases. Headless scene load has no script errors; verify the chase visually in game.
+
+- **Library maze restored to Godot export (2026-10-08):** Re-exported the current school contents from assets.blend and included all seven Library Maze Wall panels in assets/school_blockout.glb. Godot reimport completed; the headless preview loads and initializes doors/navigation without script errors.

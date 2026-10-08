@@ -50,6 +50,13 @@ func _physics_process(_delta: float) -> void:
 func set_interaction_locked(locked: bool) -> void:
 	interaction_locked = locked
 
+func set_one_way_from_world_side(allowed_side: Vector3) -> void:
+	allowed_side.y = 0.0
+	if allowed_side.length_squared() < 0.001:
+		return
+	one_way = true
+	operable_side = allowed_side.normalized()
+
 func _create_panels(width: float, height: float, thickness: float) -> void:
 	var panel_count := 2 if is_double else 1
 	var panel_width := width / float(panel_count) - 0.035

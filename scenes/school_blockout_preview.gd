@@ -29,6 +29,7 @@ const CAFETERIA_TABLE_WIDTH_FRACTION := 0.1
 const CAFETERIA_TABLE_HEIGHT := 0.92
 const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
 const AUDITORIUM_ENCOUNTER_SCRIPT := preload("res://scenes/auditorium_microphone_encounter.gd")
+const ARTROOM_BRUSH_ENCOUNTER_SCRIPT := preload("res://scenes/artroom_brush_encounter.gd")
 const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"school_keys", "name": "School Keys", "room": &"main_office", "floor": "main office floor", "encounter": &"", "u": 0.5, "v": 0.5},
 	{"id": &"weight", "name": "Weight", "room": &"locker_room", "floor": "locker room floor", "encounter": &"weight", "u": 0.5, "v": 0.12},
@@ -116,6 +117,8 @@ var _ruler_hall_locker_z_max := 0.0
 var _auditorium_encounter: Node
 var _microphone_escape_active := false
 var _microphone_escape_finish_started := false
+var _artroom_brush_encounter: Node3D
+var _brush_escape_active := false
 
 func _ready() -> void:
 	_load_school_model()
@@ -144,6 +147,10 @@ func _ready() -> void:
 	add_child(_auditorium_encounter)
 	_auditorium_encounter.call("configure", monster, player)
 	player.noise_emitted.connect(Callable(_auditorium_encounter, "receive_noise"))
+	_artroom_brush_encounter = ARTROOM_BRUSH_ENCOUNTER_SCRIPT.new()
+	_artroom_brush_encounter.name = "ArtroomBrushEncounter"
+	add_child(_artroom_brush_encounter)
+	_artroom_brush_encounter.call("configure", monster, player)
 	_create_monster_spawn_locations()
 	_camera_hallway_spawn = _make_spawn_panel(
 		{"id": "behind_camera_hallway", "kind": "Behind camera hallway"},
@@ -249,6 +256,16 @@ func _preview_item_color(item_id: StringName) -> Color:
 func _update_preview_item_encounter() -> void:
 	if _final_bell_started:
 		item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
+		return
+	if _brush_escape_active:
+		if _player_has_reached_artroom_hallway():
+			_brush_escape_active = false
+			_artroom_brush_encounter.call("finish_brush_escape")
+			_active_preview_encounter = &""
+			_preview_relocation_elapsed = 0.0
+			item_help.text = "Artroom escaped through the Bathroom | Monster returned to regular relocation"
+		else:
+			item_help.text = "The ceiling searchlight is sweeping the Artroom | Escape through the Bathroom door"
 		return
 	if _microphone_escape_active:
 		var auditorium_bounds: AABB = _item_room_bounds.get(&"auditorium", AABB())
@@ -372,17 +389,15 @@ func _cafeteria_snack_points(cafeteria_bounds: AABB) -> Array[Vector3]:
 	var result: Array[Vector3] = []
 	var kitchen_floor := _find_room_floor(school, "kitchen floor")
 	var south_wall := _find_mesh_named(school, "kitchen - south wall")
-	var west_wall := _find_mesh_named(school, "kitchen - west wall")
-	if kitchen_floor == null or kitchen_floor.mesh == null or south_wall == null or south_wall.mesh == null or west_wall == null or west_wall.mesh == null:
+	if kitchen_floor == null or kitchen_floor.mesh == null or south_wall == null or south_wall.mesh == null:
 		return result
 	var kitchen_bounds: AABB = kitchen_floor.global_transform * kitchen_floor.mesh.get_aabb()
 	var wall_bounds: AABB = south_wall.global_transform * south_wall.mesh.get_aabb()
-	var west_wall_bounds: AABB = west_wall.global_transform * west_wall.mesh.get_aabb()
 	var floor_y := kitchen_bounds.end.y
 	var opening_center_x := wall_bounds.position.x + wall_bounds.size.x * 0.5
 	var counter_depth := CAFETERIA_SERVING_COUNTER_DEPTH
 	var wait_x := clampf(
-		west_wall_bounds.end.x + 0.75,
+		kitchen_bounds.position.x + kitchen_bounds.size.x * 0.25,
 		kitchen_bounds.position.x + 0.35,
 		kitchen_bounds.end.x - 0.35
 	)
@@ -397,9 +412,9 @@ func _cafeteria_snack_points(cafeteria_bounds: AABB) -> Array[Vector3]:
 		wall_bounds.end.z + counter_depth + 0.2
 	)
 	var west_peek_position := Vector3(
-		west_wall_bounds.position.x - 0.65,
+		kitchen_bounds.position.x - 0.65,
 		cafeteria_bounds.end.y,
-		west_wall_bounds.position.z + west_wall_bounds.size.z * 0.5
+		kitchen_bounds.position.z + kitchen_bounds.size.z * 0.5
 	)
 	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
 	var snapped_wait: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, wait_position)
@@ -437,7 +452,8 @@ func _open_cafeteria_kitchen() -> void:
 	_add_preview_collider_box("KitchenServingCounter", Vector3(center_x, bounds.position.y + CAFETERIA_SERVING_COUNTER_HEIGHT * 0.5, bounds.end.z + CAFETERIA_SERVING_COUNTER_DEPTH * 0.5), Vector3(CAFETERIA_SERVING_COUNTER_WIDTH, CAFETERIA_SERVING_COUNTER_HEIGHT, CAFETERIA_SERVING_COUNTER_DEPTH), Color(0.48, 0.5, 0.5))
 	var west_wall := _find_mesh_named(school, "kitchen - west wall")
 	if west_wall == null or west_wall.mesh == null:
-		push_warning("Kitchen west wall not found; leaving the left side closed.")
+		# The current Blender layout has a modeled opening with separate side panels,
+		# so there is no full west wall to replace at runtime.
 		return
 	var west_bounds: AABB = west_wall.global_transform * west_wall.mesh.get_aabb()
 	west_wall.visible = false
@@ -593,6 +609,9 @@ func _try_collect_preview_item() -> bool:
 		_auditorium_encounter.call("begin_escape")
 		item_help.text = "Microphone collected | Monster turns, pauses, then chases | Reach the south door"
 		return true
+	if item_id == &"brush":
+		_start_artroom_brush_escape()
+		return true
 	_active_preview_encounter = &""
 	if item_id == &"ruler":
 		_start_ruler_hall_event()
@@ -643,6 +662,57 @@ func _find_auditorium_exit_door() -> Node3D:
 			best_distance = distance
 			best_door = door
 	return best_door
+
+func _start_artroom_brush_escape() -> void:
+	var bounds: AABB = _item_room_bounds.get(&"artroom", AABB())
+	if bounds.size == Vector3.ZERO:
+		push_warning("Brush collected, but the Artroom bounds were not available.")
+		return
+	var hallway_door := _find_artroom_hallway_door(bounds)
+	if is_instance_valid(hallway_door):
+		var room_center := Vector3(bounds.position.x + bounds.size.x * 0.5, hallway_door.global_position.y, bounds.position.z + bounds.size.z * 0.5)
+		hallway_door.call("set_one_way_from_world_side", hallway_door.global_position - room_center)
+		hallway_door.call("slam_shut")
+	else:
+		push_warning("Brush escape could not find the Artroom hallway door; the Bathroom route remains available.")
+	var ceiling_height := bounds.end.y + 3.5
+	for wall_direction in ["north", "south", "east", "west"]:
+		var wall := _find_mesh_named(school, "cafeteria - %s wall" % wall_direction)
+		if wall != null and wall.mesh != null:
+			var wall_bounds: AABB = wall.global_transform * wall.mesh.get_aabb()
+			ceiling_height = maxf(ceiling_height, wall_bounds.end.y - 0.08)
+	_artroom_brush_encounter.call("begin_brush_escape", bounds, ceiling_height)
+	_brush_escape_active = true
+	_active_preview_encounter = &"brush_escape"
+	item_help.text = "The ceiling searchlight is sweeping the Artroom | Escape through the Bathroom door"
+
+
+func _find_artroom_hallway_door(room_bounds: AABB) -> Node3D:
+	var room_center := Vector3(room_bounds.position.x + room_bounds.size.x * 0.5, room_bounds.position.y, room_bounds.position.z + room_bounds.size.z * 0.5)
+	var best_door: Node3D
+	var best_distance := INF
+	for candidate in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door := candidate as Node3D
+		if door == null or not String(door.get("door_id")).to_lower().contains("cafeteria"):
+			continue
+		var distance := Vector2(door.global_position.x - room_center.x, door.global_position.z - room_center.z).length()
+		if distance < best_distance:
+			best_door = door
+			best_distance = distance
+	return best_door
+
+
+func _player_has_reached_artroom_hallway() -> bool:
+	var player_position := player.global_position
+	for room_id in [&"artroom", &"bathroom"]:
+		var room_bounds: AABB = _item_room_bounds.get(room_id, AABB())
+		if room_bounds.size != Vector3.ZERO and _point_inside_room(player_position, room_bounds):
+			return false
+	var hallway_floor := _find_room_floor(school, "school site floor - circulation")
+	if hallway_floor == null or hallway_floor.mesh == null:
+		return false
+	var hallway_bounds: AABB = hallway_floor.global_transform * hallway_floor.mesh.get_aabb()
+	return _point_inside_room(player_position, hallway_bounds)
 
 func _create_locker_placeholders() -> void:
 	var bounds: AABB = _item_room_bounds.get(&"locker_room", AABB())
