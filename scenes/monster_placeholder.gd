@@ -14,6 +14,7 @@ extends CharacterBody3D
 @export_range(2.0, 30.0, 0.5) var preview_door_investigation_radius: float = 10.0
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
+@export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
 
 signal monster_state_changed(state_id: StringName)
 signal noise_relocation_requested(source_position: Vector3)
@@ -39,6 +40,9 @@ var _base_capsule_radius := 0.42
 var _investigation_time := 0.0
 var _investigation_target := Vector3.ZERO
 var _resume_hallway_patrol_after_investigation := false
+var _active_safe_room_ids: Array[StringName] = []
+var _bell_lurk_room_id: StringName = &""
+var _bell_lurk_marker_index := 0
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -70,6 +74,13 @@ func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT)
 
 func set_player_target(player: Node3D) -> void:
     _player_target = player
+
+func set_safe_rooms(room_ids: Array[StringName]) -> void:
+    _active_safe_room_ids = room_ids.duplicate()
+    _bell_lurk_room_id = &""
+    _bell_lurk_marker_index = 0
+    if current_state == &"BELL_CHASE":
+        _bell_path_refresh = 0.0
 
 func refresh_preview_navigation() -> void:
     if current_state == &"INVESTIGATE":
@@ -200,6 +211,13 @@ func _update_bell_chase() -> void:
         move_and_slide()
         return
 
+    var safe_room_id := _preview_safe_room_at(_player_target.global_position)
+    if safe_room_id != &"":
+        _update_window_lurk(safe_room_id)
+        return
+    _bell_lurk_room_id = &""
+    _navigation_agent.target_desired_distance = 0.5
+
     _bell_path_refresh -= get_physics_process_delta_time()
     if _bell_path_refresh <= 0.0:
         var target_position := _player_target.global_position
@@ -238,6 +256,66 @@ func _update_bell_chase() -> void:
             squeezed_against_doorway = true
             break
     _update_squeeze(direction, delta_time, squeezed_against_doorway or low_header_ahead)
+
+func _preview_safe_room_at(world_position: Vector3) -> StringName:
+    for floor_node in get_tree().get_nodes_in_group("preview_safe_room_floors"):
+        var room_id: StringName = floor_node.get_meta("preview_room_id", &"")
+        if not _active_safe_room_ids.has(room_id):
+            continue
+        var bounds: AABB = floor_node.get_meta("preview_room_bounds")
+        if (world_position.x >= bounds.position.x and world_position.x <= bounds.end.x
+                and world_position.z >= bounds.position.z and world_position.z <= bounds.end.z):
+            return room_id
+    return &""
+
+func _update_window_lurk(room_id: StringName) -> void:
+    var markers: Array[Node] = []
+    for marker in get_tree().get_nodes_in_group("preview_bell_lurk_points"):
+        if marker.get_meta("preview_room_id", &"") == room_id:
+            markers.append(marker)
+    if markers.is_empty():
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    markers.sort_custom(func(a: Node, b: Node) -> bool:
+        return float(a.get_meta("lurk_angle", 0.0)) < float(b.get_meta("lurk_angle", 0.0))
+    )
+    if _bell_lurk_room_id != room_id:
+        _bell_lurk_room_id = room_id
+        _bell_lurk_marker_index = 0
+        _navigation_agent.target_desired_distance = 0.35
+        var nearest_distance := INF
+        for index in markers.size():
+            var distance := global_position.distance_squared_to((markers[index] as Node3D).global_position)
+            if distance < nearest_distance:
+                nearest_distance = distance
+                _bell_lurk_marker_index = index
+        _navigation_agent.target_position = (markers[_bell_lurk_marker_index] as Node3D).global_position
+    var marker_target := (markers[_bell_lurk_marker_index] as Node3D).global_position
+    var to_marker := marker_target - global_position
+    to_marker.y = 0.0
+    if to_marker.length() <= 0.55:
+        _bell_lurk_marker_index = (_bell_lurk_marker_index + 1) % markers.size()
+        marker_target = (markers[_bell_lurk_marker_index] as Node3D).global_position
+        _navigation_agent.target_position = marker_target
+        to_marker = marker_target - global_position
+        to_marker.y = 0.0
+    if to_marker.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.01:
+        direction = to_marker
+    direction = direction.normalized()
+    var delta_time := get_physics_process_delta_time()
+    var low_header_ahead := _has_low_overhead_clearance(direction)
+    _update_squeeze(direction, delta_time, low_header_ahead)
+    velocity = direction * preview_bell_window_lurk_speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
+    _update_squeeze(direction, delta_time, low_header_ahead)
 
 func _update_squeeze(direction: Vector3, delta: float, force_squeeze: bool = false) -> void:
     var target_squeeze := 1.0 if force_squeeze else 0.0
