@@ -28,6 +28,7 @@ const CAFETERIA_TABLE_LENGTH_FRACTION := 0.62
 const CAFETERIA_TABLE_WIDTH_FRACTION := 0.1
 const CAFETERIA_TABLE_HEIGHT := 0.92
 const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
+const AUDITORIUM_ENCOUNTER_SCRIPT := preload("res://scenes/auditorium_microphone_encounter.gd")
 const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"school_keys", "name": "School Keys", "room": &"main_office", "floor": "main office floor", "encounter": &"", "u": 0.5, "v": 0.5},
 	{"id": &"weight", "name": "Weight", "room": &"locker_room", "floor": "locker room floor", "encounter": &"weight", "u": 0.5, "v": 0.12},
@@ -36,6 +37,7 @@ const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"lab_coat", "name": "Lab Coat", "room": &"lab_room", "floor": "lab room floor", "encounter": &"", "u": 0.12, "v": 0.12},
 	{"id": &"ruler", "name": "Ruler", "room": &"classroom_b", "floor": "classroom b floor", "encounter": &"", "u": 0.5, "v": 0.5},
 	{"id": &"snack", "name": "Snack", "room": &"cafeteria", "floor": "cafe floor", "encounter": &"snack", "u": 0.1, "v": 0.12},
+	{"id": &"microphone", "name": "Microphone", "room": &"auditorium", "floor": "auditorium floor", "encounter": &"microphone", "u": 0.5, "v": 0.3},
 	{"id": &"front_door_key", "name": "Front Door Key", "room": &"storage_closet", "floor": "storage closet floor", "encounter": &"final_key", "u": 0.5, "v": 0.5}
 ]
 const PREVIEW_ROOM_FLOORS: Array[Dictionary] = [
@@ -111,6 +113,9 @@ var _ruler_hall_fallback_pending := false
 var _ruler_hall_monster_at_science_end := false
 var _ruler_hall_locker_z_min := 0.0
 var _ruler_hall_locker_z_max := 0.0
+var _auditorium_encounter: Node
+var _microphone_escape_active := false
+var _microphone_escape_finish_started := false
 
 func _ready() -> void:
 	_load_school_model()
@@ -134,6 +139,11 @@ func _ready() -> void:
 	monster.set_player_target(player)
 	player.noise_emitted.connect(monster.receive_noise)
 	monster.noise_relocation_requested.connect(_relocate_nearest_spawn_to_noise)
+	_auditorium_encounter = AUDITORIUM_ENCOUNTER_SCRIPT.new()
+	_auditorium_encounter.name = "AuditoriumMicrophoneEncounter"
+	add_child(_auditorium_encounter)
+	_auditorium_encounter.call("configure", monster, player)
+	player.noise_emitted.connect(Callable(_auditorium_encounter, "receive_noise"))
 	_create_monster_spawn_locations()
 	_camera_hallway_spawn = _make_spawn_panel(
 		{"id": "behind_camera_hallway", "kind": "Behind camera hallway"},
@@ -233,11 +243,20 @@ func _preview_item_color(item_id: StringName) -> Color:
 		&"lab_coat": return Color(0.9, 0.95, 1.0)
 		&"ruler": return Color(1.0, 0.85, 0.25)
 		&"snack": return Color(0.5, 1.0, 0.3)
+		&"microphone": return Color(0.8, 0.82, 0.9)
 	return Color.WHITE
 
 func _update_preview_item_encounter() -> void:
 	if _final_bell_started:
 		item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
+		return
+	if _microphone_escape_active:
+		var auditorium_bounds: AABB = _item_room_bounds.get(&"auditorium", AABB())
+		if not _microphone_escape_finish_started and auditorium_bounds.size != Vector3.ZERO and player.global_position.z > auditorium_bounds.end.z + 0.3:
+			_microphone_escape_finish_started = true
+			_finish_microphone_escape()
+		else:
+			item_help.text = "Microphone collected | Monster turns for 3s, pauses for 3s | Reach the south door"
 		return
 	if _ruler_hall_event_active:
 		item_help.text = "Ruler encounter: hide in one of the six hallway lockers"
@@ -275,6 +294,8 @@ func _update_preview_item_encounter() -> void:
 			_science_encounter_started = false
 			_science_spawn_pending = false
 		_active_preview_encounter = &""
+		if is_instance_valid(_auditorium_encounter):
+			_auditorium_encounter.call("finish_encounter")
 		monster.end_preview_item_encounter()
 		item_help.text = "Item circles: E to collect when close | School Keys have no monster encounter"
 		return
@@ -291,6 +312,15 @@ func _update_preview_item_encounter() -> void:
 		if encounter == &"book":
 			monster.global_position = _library_northwest_spawn(bounds)
 		monster.begin_preview_item_encounter(encounter, bounds, marker.global_position, points)
+		if encounter == &"microphone":
+			var stage_position := Vector3(
+				bounds.position.x + bounds.size.x * 0.5,
+				bounds.end.y + 0.48,
+				bounds.position.z + 1.15
+			)
+			_auditorium_encounter.call("begin_guard", bounds, stage_position)
+			item_help.text = "Auditorium: walk or run to draw its gaze; stay out of its spotlight"
+			return
 		if encounter == &"snack" and not points.is_empty():
 			# The kitchen wait position is occluded by the serving wall. Place the
 			# monster there as the encounter begins; the offscreen relocation gate
@@ -303,6 +333,12 @@ func _update_preview_item_encounter() -> void:
 			item_help.text = "Monster peeks from the Kitchen; crouch behind a table | E: collect Snack"
 		else:
 			item_help.text = "Snack: cross the cafeteria using the three tables as cover"
+		return
+	if encounter == &"microphone":
+		if player.global_position.distance_to(item_marker.global_position) <= 1.65:
+			item_help.text = "Avoid the spotlight | E: collect Microphone"
+		else:
+			item_help.text = "Walk or run to draw its gaze; use the straight aisle to the Microphone"
 		return
 	if player.global_position.distance_to(item_marker.global_position) <= 1.65:
 		item_help.text = "%s encounter | E: collect %s | E near a locker to hide" % [_encounter_hint(encounter), current_item["name"]]
@@ -502,6 +538,7 @@ func _encounter_hint(encounter: StringName) -> String:
 		&"science_classroom": return "Sneak past the southeast corner; walking or running slowly turns its spotlight"
 		&"ruler": return "Darkness: follow the glowing smile as it shifts around the room"
 		&"snack": return "Kitchen: crouch behind the cafeteria tables when the monster peeks"
+		&"microphone": return "Spotlight: stay in the aisle and move only while it faces away"
 	return ""
 
 func _point_inside_room(position: Vector3, bounds: AABB) -> bool:
@@ -549,6 +586,13 @@ func _try_collect_preview_item() -> bool:
 		monster.begin_preview_weight_escape(gym_destination)
 	if item_id == &"lab_coat":
 		_start_lab_coat_window_slide()
+	if item_id == &"microphone":
+		_microphone_escape_active = true
+		_microphone_escape_finish_started = false
+		_active_preview_encounter = &"microphone_escape"
+		_auditorium_encounter.call("begin_escape")
+		item_help.text = "Microphone collected | Monster turns, pauses, then chases | Reach the south door"
+		return true
 	_active_preview_encounter = &""
 	if item_id == &"ruler":
 		_start_ruler_hall_event()
@@ -569,6 +613,36 @@ func _try_collect_preview_item() -> bool:
 	else:
 		item_help.text = "%s collected" % nearest_item["name"]
 	return true
+
+func _finish_microphone_escape() -> void:
+	var exit_door := _find_auditorium_exit_door()
+	if is_instance_valid(exit_door):
+		exit_door.call("set_interaction_locked", true)
+		exit_door.call("slam_shut")
+	else:
+		push_warning("Microphone encounter ended without finding the Auditorium south exit door.")
+	_auditorium_encounter.call("finish_encounter")
+	_microphone_escape_active = false
+	_microphone_escape_finish_started = false
+	_active_preview_encounter = &""
+	_preview_relocation_elapsed = 0.0
+	item_help.text = "The Auditorium door slammed shut | Monster returned to regular relocation"
+
+func _find_auditorium_exit_door() -> Node3D:
+	var bounds: AABB = _item_room_bounds.get(&"auditorium", AABB())
+	if bounds.size == Vector3.ZERO:
+		return null
+	var best_door: Node3D
+	var best_distance := INF
+	for candidate in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door := candidate as Node3D
+		if door == null or not String(door.get("door_id")).to_lower().contains("auditorium"):
+			continue
+		var distance := absf(door.global_position.z - bounds.end.z)
+		if distance < best_distance:
+			best_distance = distance
+			best_door = door
+	return best_door
 
 func _create_locker_placeholders() -> void:
 	var bounds: AABB = _item_room_bounds.get(&"locker_room", AABB())
@@ -1416,7 +1490,11 @@ func _load_school_model() -> void:
 func _add_school_collisions(node: Node) -> void:
 	if node is MeshInstance3D and node.mesh != null and not bool(node.get_meta("preview_collision_disabled", false)):
 		var lower_name: String = node.name.to_lower()
-		if lower_name.contains("wall") or lower_name.contains("floor") or lower_name.contains("roof"):
+		var auditorium_encounter_collider := (
+			lower_name.contains("auditorium encounter stage")
+			or lower_name.contains("auditorium encounter chair") and lower_name.contains("back")
+		)
+		if lower_name.contains("wall") or lower_name.contains("floor") or lower_name.contains("roof") or auditorium_encounter_collider:
 			var shape: Shape3D = node.mesh.create_trimesh_shape()
 			if shape != null:
 				var body := StaticBody3D.new()
