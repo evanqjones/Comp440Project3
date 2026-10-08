@@ -60,6 +60,12 @@ func get_world_position() -> Vector3:
 	return global_position
 
 
+func get_current_room_id() -> StringName:
+	# Unresolved until School/integration provides its authoritative room lookup.
+	# Do not infer a room from preview geometry or invent a fallback room name.
+	return &""
+
+
 func set_input_enabled(enabled: bool) -> void:
 	_input_enabled = enabled
 
