@@ -17,6 +17,15 @@ const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
 const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
+const CAFETERIA_SERVING_OPENING_WIDTH := 3.6
+const CAFETERIA_SERVING_OPENING_HEIGHT := 2.4
+const KITCHEN_SIDE_OPENING_WIDTH := 2.4
+const CAFETERIA_SERVING_COUNTER_WIDTH := 1.8
+const CAFETERIA_SERVING_COUNTER_DEPTH := 0.35
+const CAFETERIA_SERVING_COUNTER_HEIGHT := 0.92
+const CAFETERIA_TABLE_LENGTH_FRACTION := 0.62
+const CAFETERIA_TABLE_WIDTH_FRACTION := 0.1
+const CAFETERIA_TABLE_HEIGHT := 0.92
 const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
 const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"school_keys", "name": "School Keys", "room": &"main_office", "floor": "main office floor", "encounter": &"", "u": 0.5, "v": 0.5},
@@ -25,7 +34,7 @@ const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"brush", "name": "Brush", "room": &"artroom", "floor": "cafeteria floor", "encounter": &"brush", "u": 0.5, "v": 0.5},
 	{"id": &"lab_coat", "name": "Lab Coat", "room": &"lab_room", "floor": "lab room floor", "encounter": &"", "u": 0.12, "v": 0.12},
 	{"id": &"ruler", "name": "Ruler", "room": &"classroom_b", "floor": "classroom b floor", "encounter": &"ruler", "u": 0.5, "v": 0.5},
-	{"id": &"snack", "name": "Snack", "room": &"cafeteria", "floor": "cafe floor", "encounter": &"snack", "u": 0.5, "v": 0.5},
+	{"id": &"snack", "name": "Snack", "room": &"cafeteria", "floor": "cafe floor", "encounter": &"snack", "u": 0.1, "v": 0.12},
 	{"id": &"front_door_key", "name": "Front Door Key", "room": &"storage_closet", "floor": "storage closet floor", "encounter": &"final_key", "u": 0.5, "v": 0.5}
 ]
 const PREVIEW_ROOM_FLOORS: Array[Dictionary] = [
@@ -97,8 +106,10 @@ var _player_locker_return_mask := 1
 
 func _ready() -> void:
 	_load_school_model()
+	_open_cafeteria_kitchen()
 	if generate_school_collision:
 		_add_school_collisions(school)
+	_create_cafeteria_tables()
 	_create_school_doors()
 	_build_school_navigation()
 	await get_tree().physics_frame
@@ -267,13 +278,27 @@ func _update_preview_item_encounter() -> void:
 		if encounter == &"book":
 			monster.global_position = _library_northwest_spawn(bounds)
 		monster.begin_preview_item_encounter(encounter, bounds, marker.global_position, points)
+		if encounter == &"snack" and not points.is_empty():
+			# The kitchen wait position is occluded by the serving wall. Place the
+			# monster there as the encounter begins; the offscreen relocation gate
+			# can reject this one-time room setup before the Snack behavior starts.
+			monster.global_position = points[0]
+			monster.velocity = Vector3.ZERO
 	var item_marker := _item_markers[current_item["id"]] as Node3D
+	if encounter == &"snack":
+		if player.global_position.distance_to(item_marker.global_position) <= 1.65:
+			item_help.text = "Monster peeks from the Kitchen; crouch behind a table | E: collect Snack"
+		else:
+			item_help.text = "Snack: cross the cafeteria using the three tables as cover"
+		return
 	if player.global_position.distance_to(item_marker.global_position) <= 1.65:
 		item_help.text = "%s encounter | E: collect %s | E near a locker to hide" % [_encounter_hint(encounter), current_item["name"]]
 	else:
 		item_help.text = "%s | Find the %s circle" % [_encounter_hint(encounter), current_item["name"]]
 
 func _item_encounter_points(bounds: AABB, encounter: StringName) -> Array[Vector3]:
+	if encounter == &"snack":
+		return _cafeteria_snack_points(bounds)
 	var fractions: Array[Vector2] = []
 	match encounter:
 		&"weight": fractions = [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.75, 0.75), Vector2(0.25, 0.75)]
@@ -281,7 +306,6 @@ func _item_encounter_points(bounds: AABB, encounter: StringName) -> Array[Vector
 		&"brush": fractions = [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.8, 0.8), Vector2(0.2, 0.8), Vector2(0.5, 0.25)]
 		&"science_classroom": fractions = [Vector2(0.88, 0.88)]
 		&"ruler": fractions = [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.75, 0.75), Vector2(0.25, 0.75)]
-		&"snack": fractions = [Vector2(0.2, 0.25), Vector2(0.8, 0.25), Vector2(0.8, 0.75), Vector2(0.2, 0.75)]
 	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
 	var result: Array[Vector3] = []
 	for fraction in fractions:
@@ -295,6 +319,168 @@ func _item_encounter_points(bounds: AABB, encounter: StringName) -> Array[Vector
 			result.append(snapped)
 	return result
 
+func _cafeteria_snack_points(cafeteria_bounds: AABB) -> Array[Vector3]:
+	var result: Array[Vector3] = []
+	var kitchen_floor := _find_room_floor(school, "kitchen floor")
+	var south_wall := _find_mesh_named(school, "kitchen - south wall")
+	var west_wall := _find_mesh_named(school, "kitchen - west wall")
+	if kitchen_floor == null or kitchen_floor.mesh == null or south_wall == null or south_wall.mesh == null or west_wall == null or west_wall.mesh == null:
+		return result
+	var kitchen_bounds: AABB = kitchen_floor.global_transform * kitchen_floor.mesh.get_aabb()
+	var wall_bounds: AABB = south_wall.global_transform * south_wall.mesh.get_aabb()
+	var west_wall_bounds: AABB = west_wall.global_transform * west_wall.mesh.get_aabb()
+	var floor_y := kitchen_bounds.end.y
+	var opening_center_x := wall_bounds.position.x + wall_bounds.size.x * 0.5
+	var counter_depth := CAFETERIA_SERVING_COUNTER_DEPTH
+	var wait_x := clampf(
+		west_wall_bounds.end.x + 0.75,
+		kitchen_bounds.position.x + 0.35,
+		kitchen_bounds.end.x - 0.35
+	)
+	var wait_position := Vector3(
+		wait_x,
+		floor_y,
+		wall_bounds.position.z - 0.75
+	)
+	var peek_position := Vector3(
+		opening_center_x + CAFETERIA_SERVING_COUNTER_WIDTH * 0.5 + 0.18,
+		cafeteria_bounds.end.y,
+		wall_bounds.end.z + counter_depth + 0.2
+	)
+	var west_peek_position := Vector3(
+		west_wall_bounds.position.x - 0.65,
+		cafeteria_bounds.end.y,
+		west_wall_bounds.position.z + west_wall_bounds.size.z * 0.5
+	)
+	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
+	var snapped_wait: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, wait_position)
+	var snapped_peek: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, peek_position)
+	var snapped_west_peek: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, west_peek_position)
+	if snapped_wait.distance_to(wait_position) > 2.0 or snapped_peek.distance_to(peek_position) > 2.0 or snapped_west_peek.distance_to(west_peek_position) > 2.0:
+		push_warning("Snack encounter could not find connected kitchen opening waypoints.")
+		return result
+	if not _point_inside_room(snapped_wait, kitchen_bounds) or not _point_inside_room(snapped_peek, cafeteria_bounds) or not _point_inside_room(snapped_west_peek, cafeteria_bounds):
+		push_warning("Snack encounter opening waypoints fell outside their room bounds.")
+		return result
+	result.append(snapped_wait)
+	result.append(snapped_peek)
+	result.append(snapped_west_peek)
+	return result
+
+func _open_cafeteria_kitchen() -> void:
+	var wall := _find_mesh_named(school, "kitchen - south wall")
+	if wall == null or wall.mesh == null:
+		push_warning("Kitchen south wall not found; leaving the kitchen unchanged.")
+		return
+	var bounds: AABB = wall.global_transform * wall.mesh.get_aabb()
+	wall.visible = false
+	wall.set_meta("preview_collision_disabled", true)
+	var opening_width := minf(CAFETERIA_SERVING_OPENING_WIDTH, bounds.size.x * 0.75)
+	var opening_height := minf(CAFETERIA_SERVING_OPENING_HEIGHT, bounds.size.y * 0.55)
+	var side_width := (bounds.size.x - opening_width) * 0.5
+	var center_x := bounds.position.x + bounds.size.x * 0.5
+	var center_y := bounds.position.y + bounds.size.y * 0.5
+	var center_z := bounds.position.z + bounds.size.z * 0.5
+	var wall_color := Color(0.39, 0.43, 0.48)
+	_add_preview_collider_box("KitchenServingWall_West", Vector3(bounds.position.x + side_width * 0.5, center_y, center_z), Vector3(side_width, bounds.size.y, bounds.size.z), wall_color)
+	_add_preview_collider_box("KitchenServingWall_East", Vector3(bounds.end.x - side_width * 0.5, center_y, center_z), Vector3(side_width, bounds.size.y, bounds.size.z), wall_color)
+	_add_preview_collider_box("KitchenServingWall_Header", Vector3(center_x, bounds.position.y + (bounds.size.y + opening_height) * 0.5, center_z), Vector3(opening_width, bounds.size.y - opening_height, bounds.size.z), wall_color)
+	_add_preview_collider_box("KitchenServingCounter", Vector3(center_x, bounds.position.y + CAFETERIA_SERVING_COUNTER_HEIGHT * 0.5, bounds.end.z + CAFETERIA_SERVING_COUNTER_DEPTH * 0.5), Vector3(CAFETERIA_SERVING_COUNTER_WIDTH, CAFETERIA_SERVING_COUNTER_HEIGHT, CAFETERIA_SERVING_COUNTER_DEPTH), Color(0.48, 0.5, 0.5))
+	var west_wall := _find_mesh_named(school, "kitchen - west wall")
+	if west_wall == null or west_wall.mesh == null:
+		push_warning("Kitchen west wall not found; leaving the left side closed.")
+		return
+	var west_bounds: AABB = west_wall.global_transform * west_wall.mesh.get_aabb()
+	west_wall.visible = false
+	west_wall.set_meta("preview_collision_disabled", true)
+	var west_opening_width := minf(KITCHEN_SIDE_OPENING_WIDTH, west_bounds.size.z * 0.75)
+	var west_opening_height := minf(CAFETERIA_SERVING_OPENING_HEIGHT, west_bounds.size.y * 0.55)
+	var west_side_width := (west_bounds.size.z - west_opening_width) * 0.5
+	var west_center_x := west_bounds.position.x + west_bounds.size.x * 0.5
+	var west_center_y := west_bounds.position.y + west_bounds.size.y * 0.5
+	var west_center_z := west_bounds.position.z + west_bounds.size.z * 0.5
+	_add_preview_collider_box("KitchenLeftOpening_SouthPanel", Vector3(west_center_x, west_center_y, west_bounds.position.z + west_side_width * 0.5), Vector3(west_bounds.size.x, west_bounds.size.y, west_side_width), wall_color)
+	_add_preview_collider_box("KitchenLeftOpening_NorthPanel", Vector3(west_center_x, west_center_y, west_bounds.end.z - west_side_width * 0.5), Vector3(west_bounds.size.x, west_bounds.size.y, west_side_width), wall_color)
+	_add_preview_collider_box("KitchenLeftOpening_Header", Vector3(west_center_x, west_bounds.position.y + (west_bounds.size.y + west_opening_height) * 0.5, west_center_z), Vector3(west_bounds.size.x, west_bounds.size.y - west_opening_height, west_opening_width), wall_color)
+
+func _create_cafeteria_tables() -> void:
+	var cafeteria_floor := _find_room_floor(school, "cafe floor")
+	if cafeteria_floor == null or cafeteria_floor.mesh == null:
+		return
+	var bounds: AABB = cafeteria_floor.global_transform * cafeteria_floor.mesh.get_aabb()
+	var length := bounds.size.x * CAFETERIA_TABLE_LENGTH_FRACTION
+	var width := clampf(bounds.size.z * CAFETERIA_TABLE_WIDTH_FRACTION, 0.65, 1.0)
+	var table_height := CAFETERIA_TABLE_HEIGHT
+	var kitchen_south_wall := _find_mesh_named(school, "kitchen - south wall")
+	var table_z_positions: Array[float] = []
+	if kitchen_south_wall != null and kitchen_south_wall.mesh != null:
+		var serving_wall_bounds: AABB = kitchen_south_wall.global_transform * kitchen_south_wall.mesh.get_aabb()
+		# Match Blender's two remaining rows: 0.85 m and 2.95 m into the Cafe
+		# from the kitchen south wall. The floor meshes overlap under the Kitchen.
+		table_z_positions.append(serving_wall_bounds.end.z + 0.85)
+		table_z_positions.append(serving_wall_bounds.end.z + 2.95)
+	else:
+		for fraction in [0.58, 0.88]:
+			table_z_positions.append(lerpf(bounds.position.z, bounds.end.z, fraction))
+	for index in table_z_positions.size():
+		var table_center := Vector3(
+			bounds.position.x + bounds.size.x * 0.5,
+			bounds.end.y + table_height * 0.5,
+			table_z_positions[index]
+		)
+		var table := StaticBody3D.new()
+		table.name = "CafeteriaTable_%02d" % (index + 1)
+		table.collision_layer = 1
+		table.collision_mask = 1
+		school.add_child(table)
+		table.global_position = table_center
+		var collision := CollisionShape3D.new()
+		var collision_box := BoxShape3D.new()
+		collision_box.size = Vector3(length, table_height, width)
+		collision.shape = collision_box
+		table.add_child(collision)
+		_add_table_part(table, Vector3(length, 0.1, width), Vector3(0.0, table_height * 0.5 - 0.05, 0.0), Color(0.55, 0.58, 0.57))
+		for side in [-1.0, 1.0]:
+			_add_table_part(table, Vector3(length * 0.9, 0.62, 0.05), Vector3(0.0, -0.05, float(side) * width * 0.32), Color(0.37, 0.43, 0.45))
+		for end in [-1.0, 1.0]:
+			for side in [-1.0, 1.0]:
+				_add_table_part(table, Vector3(0.1, 0.72, 0.1), Vector3(float(end) * (length * 0.5 - 0.12), -0.1, float(side) * (width * 0.5 - 0.08)), Color(0.3, 0.35, 0.38))
+
+func _add_preview_collider_box(node_name: String, center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = node_name
+	body.collision_layer = 1
+	body.collision_mask = 1
+	school.add_child(body)
+	body.global_position = center
+	var collision := CollisionShape3D.new()
+	var collision_box := BoxShape3D.new()
+	collision_box.size = size
+	collision.shape = collision_box
+	body.add_child(collision)
+	var visual := MeshInstance3D.new()
+	visual.name = "BlockoutVisual"
+	var box_mesh := BoxMesh.new()
+	box_mesh.size = size
+	visual.mesh = box_mesh
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	visual.material_override = material
+	body.add_child(visual)
+	return body
+
+func _add_table_part(parent: Node3D, size: Vector3, local_position: Vector3, color: Color) -> void:
+	var visual := MeshInstance3D.new()
+	visual.name = "TablePart"
+	var box_mesh := BoxMesh.new()
+	box_mesh.size = size
+	visual.mesh = box_mesh
+	visual.position = local_position
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	visual.material_override = material
+	parent.add_child(visual)
+
 func _encounter_hint(encounter: StringName) -> String:
 	match encounter:
 		&"weight": return "Sneak to the north Weight; hide in a locker | Monster investigates noise"
@@ -302,7 +488,7 @@ func _encounter_hint(encounter: StringName) -> String:
 		&"brush": return "Don't disturb the room: look away and it may switch figures"
 		&"science_classroom": return "Sneak past the southeast corner; walking or running slowly turns its spotlight"
 		&"ruler": return "Darkness: follow the glowing smile as it shifts around the room"
-		&"snack": return "Line of sight: monster patrols between tables; use cover"
+		&"snack": return "Kitchen: crouch behind the cafeteria tables when the monster peeks"
 	return ""
 
 func _point_inside_room(position: Vector3, bounds: AABB) -> bool:
@@ -1102,7 +1288,7 @@ func _load_school_model() -> void:
 	school.add_child(model)
 
 func _add_school_collisions(node: Node) -> void:
-	if node is MeshInstance3D and node.mesh != null:
+	if node is MeshInstance3D and node.mesh != null and not bool(node.get_meta("preview_collision_disabled", false)):
 		var lower_name: String = node.name.to_lower()
 		if lower_name.contains("wall") or lower_name.contains("floor") or lower_name.contains("roof"):
 			var shape: Shape3D = node.mesh.create_trimesh_shape()
@@ -1181,6 +1367,15 @@ func _find_room_floor(node: Node, room_name: String) -> MeshInstance3D:
 		return node
 	for child in node.get_children():
 		var found: MeshInstance3D = _find_room_floor(child, room_name)
+		if found != null:
+			return found
+	return null
+
+func _find_mesh_named(node: Node, target_name: String) -> MeshInstance3D:
+	if node is MeshInstance3D and node.name.to_lower() == target_name.to_lower():
+		return node
+	for child in node.get_children():
+		var found := _find_mesh_named(child, target_name)
 		if found != null:
 			return found
 	return null

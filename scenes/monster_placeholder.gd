@@ -16,6 +16,12 @@ extends CharacterBody3D
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
 @export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
 @export_range(0.05, 1.0, 0.05) var preview_book_follow_speed: float = 0.5
+@export_range(0.5, 15.0, 0.25) var preview_snack_peek_interval_min: float = 3.0
+@export_range(0.5, 20.0, 0.25) var preview_snack_peek_interval_max: float = 5.0
+@export_range(0.25, 5.0, 0.25) var preview_snack_peek_seconds: float = 1.5
+@export_range(1.0, 20.0, 0.5) var preview_snack_rush_speed: float = 7.0
+@export_range(1.0, 30.0, 0.5) var preview_snack_sight_distance: float = 14.0
+@export_range(0.5, 15.0, 0.5) var preview_snack_sight_half_width: float = 6.0
 @export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
 @export_range(5.0, 90.0, 1.0) var preview_science_turn_speed_degrees: float = 18.0
 
@@ -78,6 +84,12 @@ var _preview_book_sink_active := false
 var _preview_book_sink_start_y := 0.0
 var _preview_book_sink_tween: Tween
 var _preview_player_hidden := false
+var _preview_snack_phase: StringName = &""
+var _preview_snack_timer := 0.0
+var _preview_snack_peek_index := 1
+var _preview_snack_path_refresh := 0.0
+var _base_sight_distance := 0.0
+var _base_sight_half_width := 0.0
 var _weight_investigation_active := false
 var _weight_investigation_target := Vector3.ZERO
 var _weight_look_time := 0.0
@@ -91,6 +103,8 @@ func _ready() -> void:
     _collision_shape.shape = _capsule_shape
     _visual_capsule = $TallCapsule
     _capsule_was_visible = _visual_capsule.visible
+    _base_sight_distance = sight_distance
+    _base_sight_half_width = sight_half_width
     _search_cone = get_node_or_null("OpaqueSearchCone") as MeshInstance3D
     _create_opaque_search_cone()
     _search_cone = get_node("OpaqueSearchCone") as MeshInstance3D
@@ -111,6 +125,10 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
     _preview_item_waypoint_index = 0
     _preview_item_refresh = 0.0
     _preview_item_switch_cooldown = 2.5
+    _preview_snack_phase = &""
+    _preview_snack_timer = 0.0
+    _preview_snack_peek_index = 1
+    _preview_snack_path_refresh = 0.0
     _preview_lab_attention_time = 0.0
     _preview_item_removed = false
     _weight_investigation_active = false
@@ -126,6 +144,16 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
     _patrol_active = false
     _set_state(&"PATROL")
     _navigation_agent.target_desired_distance = 0.5
+    if encounter == &"snack":
+        _preview_snack_phase = &"waiting"
+        _preview_snack_timer = randf_range(preview_snack_peek_interval_min, maxf(preview_snack_peek_interval_min, preview_snack_peek_interval_max))
+        sight_distance = preview_snack_sight_distance
+        sight_half_width = preview_snack_sight_half_width
+        _create_opaque_search_cone()
+    else:
+        sight_distance = _base_sight_distance
+        sight_half_width = _base_sight_half_width
+        _create_opaque_search_cone()
     if encounter == &"lab_coat" and not _preview_item_points.is_empty():
         _navigation_agent.target_position = _preview_item_points[0]
     elif encounter == &"science_classroom" and not _preview_item_points.is_empty():
@@ -147,6 +175,11 @@ func end_preview_item_encounter() -> void:
     _science_encounter_settled = false
     _science_has_turn_target = false
     _preview_item_encounter = &""
+    _preview_snack_phase = &""
+    _preview_snack_timer = 0.0
+    sight_distance = _base_sight_distance
+    sight_half_width = _base_sight_half_width
+    _create_opaque_search_cone()
     _preview_item_points.clear()
     _preview_lab_attention_time = 0.0
     _visual_capsule.visible = _capsule_was_visible
@@ -292,6 +325,13 @@ func _face_preview_direction(direction: Vector3, delta: float) -> void:
     var desired_basis := Basis(Vector3.UP, scan) * Basis.looking_at(direction, Vector3.UP)
     global_basis = global_basis.slerp(desired_basis, minf(1.0, delta * 1.2))
 
+func _face_preview_direction_stably(direction: Vector3, delta: float) -> void:
+    direction.y = 0.0
+    if direction.length_squared() < 0.001:
+        return
+    var desired_basis := Basis.looking_at(direction.normalized(), Vector3.UP)
+    global_basis = global_basis.slerp(desired_basis, minf(1.0, delta * 1.8))
+
 func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> void:
     _preview_item_refresh = maxf(0.0, _preview_item_refresh - delta)
     if _preview_item_refresh <= 0.0 or _preview_item_last_navigation_target.distance_to(target) > 0.35:
@@ -395,12 +435,44 @@ func _update_preview_item_encounter(delta: float) -> void:
                     velocity = Vector3.ZERO
                 _preview_item_switch_cooldown = randf_range(3.0, 5.0)
         &"snack":
-            if _preview_item_points.is_empty():
-                return
-            if _navigation_agent.is_navigation_finished() or global_position.distance_to(_preview_item_points[_preview_item_waypoint_index]) < 0.65:
-                _preview_item_waypoint_index = (_preview_item_waypoint_index + 1) % _preview_item_points.size()
-                _set_item_waypoint_target()
-            _move_preview_item_toward(_preview_item_points[_preview_item_waypoint_index], 0.4, delta)
+            _update_snack_encounter(delta)
+
+func _update_snack_encounter(delta: float) -> void:
+    if _preview_item_points.size() < 2:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    var kitchen_position := _preview_item_points[0]
+    var peek_index := clampi(_preview_snack_peek_index, 1, _preview_item_points.size() - 1)
+    var opening_position := _preview_item_points[peek_index]
+    if _preview_snack_phase == &"rushing":
+        _preview_snack_phase = &"returning"
+        if _preview_item_points.size() >= 3:
+            _preview_snack_peek_index = 2 if peek_index == 1 else 1
+        _navigation_agent.target_position = kitchen_position
+    if _preview_snack_phase == &"waiting" or _preview_snack_phase == &"peeking":
+        velocity = Vector3.ZERO
+        move_and_slide()
+        _face_preview_direction_stably(opening_position - global_position, delta)
+        _preview_snack_timer -= delta
+        if _preview_snack_timer <= 0.0:
+            if _preview_snack_phase == &"waiting":
+                _preview_snack_phase = &"peeking"
+                _preview_snack_timer = preview_snack_peek_seconds
+            else:
+                _preview_snack_phase = &"waiting"
+                _preview_snack_timer = randf_range(preview_snack_peek_interval_min, maxf(preview_snack_peek_interval_min, preview_snack_peek_interval_max))
+                if _preview_item_points.size() >= 3:
+                    _preview_snack_peek_index = 2 if peek_index == 1 else 1
+        return
+    if _preview_snack_phase == &"returning":
+        if global_position.distance_to(kitchen_position) <= 0.65:
+            velocity = Vector3.ZERO
+            move_and_slide()
+            _preview_snack_phase = &"waiting"
+            _preview_snack_timer = randf_range(preview_snack_peek_interval_min, maxf(preview_snack_peek_interval_min, preview_snack_peek_interval_max))
+            return
+        _move_preview_item_toward(kitchen_position, 0.8, delta)
 
 func _start_weight_investigation(source_position: Vector3) -> void:
     var target := _preview_clamp_to_encounter_room(source_position)
@@ -665,7 +737,10 @@ func _physics_process(delta: float) -> void:
         return
 
     if _can_see_player() and _preview_item_encounter != &"weight":
-        if _preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled):
+        var snack_is_peeking := _preview_item_encounter != &"snack" or _preview_snack_phase == &"peeking"
+        if snack_is_peeking and (_preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled)):
+            if _preview_item_encounter == &"snack":
+                _preview_snack_phase = &"rushing"
             _set_state(&"SHORT_CHASE")
             _lost_sight_time = 0.0
             _update_short_chase(delta)
@@ -962,6 +1037,13 @@ func _update_short_chase(delta: float) -> void:
     else:
         _lost_sight_time += delta
         if _lost_sight_time >= preview_lose_sight_grace:
+            if _preview_item_encounter == &"snack":
+                if _preview_snack_phase == &"rushing" and _preview_item_points.size() >= 3:
+                    _preview_snack_peek_index = 2 if _preview_snack_peek_index == 1 else 1
+                _preview_snack_phase = &"returning"
+                if not _preview_item_points.is_empty():
+                    _navigation_agent.target_position = _preview_item_points[0]
+                    _preview_item_last_navigation_target = _preview_item_points[0]
             _set_state(&"PATROL")
             return
 
@@ -972,10 +1054,37 @@ func _update_short_chase(delta: float) -> void:
         move_and_slide()
         return
 
+    var low_header_ahead := false
+    if _preview_item_encounter == &"snack":
+        _preview_snack_path_refresh -= delta
+        if (_preview_snack_path_refresh <= 0.0
+                or _navigation_agent.target_position.distance_to(_player_target.global_position) > 0.5):
+            _navigation_agent.target_position = _player_target.global_position
+            _preview_snack_path_refresh = 0.2
+        direction = _navigation_agent.get_next_path_position() - global_position
+        direction.y = 0.0
+        if direction.length_squared() < 0.01:
+            direction = _player_target.global_position - global_position
+            direction.y = 0.0
+        low_header_ahead = _has_low_overhead_clearance(direction)
+        _update_squeeze(direction, delta, low_header_ahead)
+    if direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
     direction = direction.normalized()
-    velocity = direction * preview_short_chase_speed
+    var chase_speed := preview_snack_rush_speed if _preview_item_encounter == &"snack" else preview_short_chase_speed
+    velocity = direction * chase_speed
+    var centerline_is_clear := _is_centerline_clear(direction)
     move_and_slide()
     look_at(global_position + direction, Vector3.UP)
+    if _preview_item_encounter == &"snack":
+        var squeezed_against_opening := low_header_ahead
+        for collision_index in get_slide_collision_count():
+            if absf(get_slide_collision(collision_index).get_normal().y) < 0.5 and centerline_is_clear:
+                squeezed_against_opening = true
+                break
+        _update_squeeze(direction, delta, squeezed_against_opening)
 
 func _can_see_player() -> bool:
     if _preview_player_hidden:
@@ -983,7 +1092,11 @@ func _can_see_player() -> bool:
     if not is_instance_valid(_player_target):
         return false
 
-    var target_local := global_transform.affine_inverse() * _player_target.global_position
+    var player_movement_state: Variant = _player_target.get("movement_state")
+    var snack_standing_target_height := 1.3 if _preview_item_encounter == &"snack" else 0.75
+    var target_height := 0.42 if player_movement_state == &"crouching" else snack_standing_target_height
+    var visible_target := _player_target.global_position + Vector3.UP * target_height
+    var target_local := global_transform.affine_inverse() * visible_target
     var forward_distance := -target_local.z
     if forward_distance <= 0.05 or forward_distance > sight_distance:
         return false
@@ -993,7 +1106,7 @@ func _can_see_player() -> bool:
         return false
 
     var ray_start := global_position + Vector3.UP * 1.5
-    var ray_end := _player_target.global_position + Vector3.UP * 0.75
+    var ray_end := visible_target
     var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
     query.collision_mask = 1
     query.exclude = [get_rid()]
@@ -1024,8 +1137,11 @@ func _create_opaque_search_cone() -> void:
     cone_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
     cone_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-    var cone := MeshInstance3D.new()
-    cone.name = "OpaqueSearchCone"
+    var cone := get_node_or_null("OpaqueSearchCone") as MeshInstance3D
+    if cone == null:
+        cone = MeshInstance3D.new()
+        cone.name = "OpaqueSearchCone"
+        add_child(cone)
     cone.mesh = cone_mesh
     cone.material_override = cone_material
-    add_child(cone)
+    _search_cone = cone
