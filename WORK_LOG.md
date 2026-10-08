@@ -83,3 +83,11 @@ This log records the school-model and Godot-preview work completed with the user
 - Added a temporary green spawn panel that tracks a candidate point 4 m behind the player camera. It only becomes a candidate when the point stays behind the camera, is within 0.8 m of the navigation surface, is outside all excluded room/outside floor bounds, and remains within 8 m of a known hallway spawn zone.
 - The moving point joins the hallway candidates, retaining the existing 75% hallway-first relocation preference. If it cannot find a safe hallway point, it is hidden and skipped.
 - Verified in the live Godot preview that the moving point becomes valid behind the camera in the Lobby and remains on the hallway navigation surface. Godot reported no editor errors.
+
+## Automatic preview doors and monster noise (2026-10-07)
+
+- Added runtime door panels to the 24 unique modeled doorway headers. Wide openings use double leaves; narrower openings use one leaf. Panels block the doorway and open once over a provisional 1.8 seconds when the player approaches within 1.35 m; they stay open afterward.
+- Kept the Locker Room to hallway door one-way: the player must approach from the Locker Room side to open it.
+- Opening a door emits one preview noise event at 0.7 strength. The monster has a 70% response chance: within a provisional 10 m radius it turns and walks toward the sound for up to 6 seconds; farther away it tries spawn panels nearest the door first. Relocation continues to require an off-camera destination and valid navigation point, and is blocked during Bell/chase.
+- Added tunable export values for investigation radius/duration and opening duration/trigger distance. The preview door noise probability and strength are the user's requested 70%; investigation range/duration are temporary values pending tuning.
+- Godot headless editor import and preview launch completed with no script/navigation errors. Godot printed environment warnings because its user log directory and Windows certificate store are unavailable in this sandbox.

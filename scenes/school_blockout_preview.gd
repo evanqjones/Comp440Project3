@@ -16,6 +16,7 @@ const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
 const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
+const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
 
 var _bell_debug_active := false
 var _spawn_markers: Array[Node3D] = []
@@ -28,6 +29,7 @@ func _ready() -> void:
     _load_school_model()
     if generate_school_collision:
         _add_school_collisions(school)
+	_create_school_doors()
     _build_school_navigation()
     await get_tree().physics_frame
     await get_tree().physics_frame
@@ -35,6 +37,7 @@ func _ready() -> void:
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
+	monster.noise_relocation_requested.connect(_relocate_nearest_spawn_to_noise)
     _create_monster_spawn_locations()
     _camera_hallway_spawn = _make_spawn_panel(
         {"id": "behind_camera_hallway", "kind": "Behind camera hallway"},
@@ -47,7 +50,7 @@ func _process(delta: float) -> void:
     _camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
     _camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
     var chase_active: bool = monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE"
-    if _bell_debug_active or chase_active:
+	if _bell_debug_active or chase_active or monster.current_state == &"INVESTIGATE":
         _update_spawn_debug_label()
         return
     _preview_relocation_elapsed += delta
@@ -62,6 +65,8 @@ func _update_spawn_debug_label() -> void:
         countdown_text = "paused (Bell)"
     elif monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE":
         countdown_text = "paused (chase)"
+	elif monster.current_state == &"INVESTIGATE":
+		countdown_text = "paused (investigating)"
     var spawn_count := _spawn_markers.size() + int(_camera_hallway_spawn_valid)
     spawn_help.text = "Spawn panels: %d   Auto relocate: %s   Hallway bias: 75%%   M: toggle   X: test" % [spawn_count, countdown_text]
 
@@ -78,8 +83,9 @@ func _wait_for_navigation_map() -> void:
         bounds.position.z + bounds.size.z * 0.5
     )
     for frame_index in range(120):
+		if NavigationServer3D.map_get_iteration_id(navigation_map) > 0:
         var nearest_point: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, sample_position)
-        if NavigationServer3D.map_get_iteration_id(navigation_map) > 0 and nearest_point.distance_to(sample_position) <= 1.35:
+			if nearest_point.distance_to(sample_position) <= 1.35:
             return
         await get_tree().physics_frame
 
@@ -107,6 +113,79 @@ func _build_school_navigation() -> void:
     region.bake_navigation_mesh(false)
     if region.navigation_mesh.get_polygon_count() == 0:
         push_error("Monster navigation mesh bake produced no walkable polygons.")
+
+func _create_school_doors() -> void:
+	var headers: Array[MeshInstance3D] = []
+	_collect_door_headers(school, headers)
+	var centers: Array[Vector3] = []
+	var locker_floor := _find_room_floor(school, "locker room floor")
+	var locker_center := Vector3.ZERO
+	if locker_floor != null and locker_floor.mesh != null:
+		var locker_bounds: AABB = locker_floor.global_transform * locker_floor.mesh.get_aabb()
+		locker_center = locker_bounds.position + locker_bounds.size * 0.5
+	for header in headers:
+		if header.mesh == null:
+			continue
+		var bounds: AABB = header.global_transform * header.mesh.get_aabb()
+		var center := bounds.get_center()
+		var duplicate := false
+		for existing in centers:
+			if Vector2(existing.x, existing.z).distance_to(Vector2(center.x, center.z)) < 0.55:
+				duplicate = true
+				break
+		if duplicate:
+			continue
+		var width := maxf(bounds.size.x, bounds.size.z)
+		var thickness := minf(bounds.size.x, bounds.size.z)
+		if width < 0.72:
+			continue
+		centers.append(center)
+		var one_way := header.name.to_lower().contains("locker room hallway")
+		var allowed_side := Vector3.ZERO
+		if one_way:
+			allowed_side = locker_center - center
+			allowed_side.y = 0.0
+		var door := PREVIEW_DOOR_SCRIPT.new()
+		door.name = "Door_%s" % String(header.name).replace("Door Header Wall Infill - ", "").replace(" ", "_")
+		door.configure(
+			StringName(header.name),
+			Vector3(center.x, 0.14, center.z),
+			minf(width, 2.8),
+			2.15,
+			maxf(0.08, minf(thickness, 0.18)),
+			player,
+			width >= 1.8,
+			one_way,
+			allowed_side,
+			bounds.size.z > bounds.size.x
+		)
+		door.opened.connect(_on_preview_door_opened)
+		school.add_child(door)
+	print("Preview doors created: %d" % centers.size())
+
+func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
+	if node is MeshInstance3D and node.name.to_lower().contains("door header wall infill"):
+		result.append(node)
+	for child in node.get_children():
+		_collect_door_headers(child, result)
+
+func _on_preview_door_opened(door_id: StringName, world_position: Vector3, loudness: float) -> void:
+	print("Door opened: %s (noise %.0f%%)" % [door_id, loudness * 100.0])
+	monster.receive_preview_door_noise(world_position, loudness)
+
+func _relocate_nearest_spawn_to_noise(source_position: Vector3) -> void:
+	if _bell_debug_active or monster.current_state != &"PATROL":
+		return
+	var candidates: Array[Node3D] = _spawn_markers.duplicate()
+	if _camera_hallway_spawn_valid:
+		candidates.append(_camera_hallway_spawn)
+	candidates.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return a.global_position.distance_squared_to(source_position) < b.global_position.distance_squared_to(source_position)
+	)
+	for marker in candidates:
+		if monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, _is_hallway_spawn(marker)):
+			print("Monster relocated off-camera to investigate door noise: %s" % marker.get_meta("spawn_id", marker.name))
+			return
 
 func _unhandled_input(event: InputEvent) -> void:
     if not (event is InputEventKey and event.pressed and not event.echo):
