@@ -1,6 +1,8 @@
 extends CharacterBody3D
 class_name PlayerSystem
 
+signal interaction_requested(target_id: StringName)
+
 # Temporary tuning only: exact stamina values/policy remain OPEN in GAME_SPEC.md.
 @export_group("Provisional Stamina")
 @export_range(1.0, 1000.0, 1.0) var stamina_capacity: float = 100.0
