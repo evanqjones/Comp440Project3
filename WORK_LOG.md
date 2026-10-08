@@ -134,3 +134,9 @@ This log records the school-model and Godot-preview work completed with the user
 - Wired Player noise to the preview Monster. Nearby quiet events have a 30% chance to make it face the player without moving. Loud events use the existing 70% door-noise response chance and its investigation or off-camera relocation behavior. Bell suppresses both responses.
 - Godot 4.7.2 headless editor scan and preview startup completed without GDScript errors. Preview startup created 24 doors and the existing window markers. Godot emitted its environment-only root-certificate and editor-settings warnings; no project script errors appeared.
 - Values are provisional preview tuning. No footstep audio clips were added; these events drive gameplay response only.
+
+## Stuck investigation relocation fallback (2026-10-07)
+
+- Added a 15-second no-progress timer during INVESTIGATE. The progress check measures distance to the active sound target, so normal movement toward it resets the timer.
+- When stuck, the monster retries the existing spawn relocation path once per second. That path still rejects a move if the monster's current body or destination is visible from the player camera; wall occlusion is accepted. It remains disabled during Bell.
+- Godot headless startup is used to check script parsing and preview initialization; the fallback logic is not yet exercised with a dedicated automated test.
