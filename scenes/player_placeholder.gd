@@ -11,8 +11,17 @@ extends "res://scripts/player_system.gd"
 @export_range(-1.2, -0.05, 0.01) var camera_min_pitch: float = -0.85
 @export_range(0.05, 1.2, 0.01) var camera_max_pitch: float = 0.55
 
+@export_group("Provisional Interaction")
+# Camera-to-hit reach, including the third-person camera's offset from Player.
+@export_range(0.1, 20.0, 0.1) var interaction_distance: float = 6.0
+
+# Test/preview marker only; School target IDs and production wiring are pending.
+# Temporary colliders carry a nonempty StringName, never an inferred node name.
+const PREVIEW_TARGET_ID_META: StringName = &"player_preview_target_id"
+
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var player_camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
+@onready var interaction_prompt: Label = $InteractionPrompt/Label
 
 signal noise_emitted(event: NoiseEvent)
 
@@ -21,6 +30,8 @@ var _noise_time_remaining := 0.0
 var _standing_capsule_height := 1.65
 var _standing_camera_height := 1.32
 var _standing_visual_height := 1.65
+var _interaction_target_id: StringName = &""
+var _pending_interaction_target_id: StringName = &""
 
 func _ready() -> void:
     super._ready()
@@ -37,6 +48,13 @@ func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_E or event.physical_keycode == KEY_E):
+        # Consume on the next physics tick, after rechecking range and occlusion.
+        _pending_interaction_target_id = _interaction_target_id
+        if _interaction_target_id != &"":
+            get_viewport().set_input_as_handled()
+        return
+
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
         get_viewport().set_input_as_handled()
@@ -93,6 +111,33 @@ func _physics_process(delta: float) -> void:
         _movement_state = &"crouching"
     _emit_movement_noise(input_axis.length_squared() > 0.0, is_sprinting)
     _update_stamina(delta)
+    _update_interaction_target()
+    _consume_interaction_request()
+
+func _update_interaction_target() -> void:
+    _interaction_target_id = &""
+    var camera := get_viewport().get_camera_3d()
+    if camera == player_camera:
+        var ray_start := camera.global_position
+        var ray_end := ray_start - camera.global_basis.z * interaction_distance
+        var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
+        query.exclude = [get_rid()]
+        query.hit_from_inside = true
+        # Query all body layers: an unmarked wall must block a marked target.
+        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        if not hit.is_empty():
+            var collider := hit["collider"] as CollisionObject3D
+            if is_instance_valid(collider):
+                var target_id: Variant = collider.get_meta(PREVIEW_TARGET_ID_META, &"")
+                if target_id is StringName and not String(target_id).strip_edges().is_empty():
+                    _interaction_target_id = target_id
+    interaction_prompt.visible = _interaction_target_id != &""
+
+func _consume_interaction_request() -> void:
+    var requested_id := _pending_interaction_target_id
+    _pending_interaction_target_id = &""
+    if requested_id != &"" and requested_id == _interaction_target_id:
+        interaction_requested.emit(requested_id)
 
 func _set_crouching(crouching: bool) -> void:
     if _is_crouching == crouching:
