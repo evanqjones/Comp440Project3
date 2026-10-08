@@ -15,6 +15,11 @@ extends CharacterBody3D
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
 @export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
+@export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
+
+const PREVIEW_STUCK_INVESTIGATION_SECONDS := 15.0
+const PREVIEW_STUCK_RELOCATION_RETRY_SECONDS := 1.0
+const PREVIEW_INVESTIGATION_PROGRESS_EPSILON := 0.002
 
 signal monster_state_changed(state_id: StringName)
 signal noise_relocation_requested(source_position: Vector3)
@@ -39,10 +44,15 @@ var _base_capsule_height := 3.0
 var _base_capsule_radius := 0.42
 var _investigation_time := 0.0
 var _investigation_target := Vector3.ZERO
+var _investigation_last_target_distance := INF
+var _investigation_stall_time := 0.0
+var _investigation_relocation_retry_time := 0.0
 var _resume_hallway_patrol_after_investigation := false
 var _active_safe_room_ids: Array[StringName] = []
 var _bell_lurk_room_id: StringName = &""
 var _bell_lurk_marker_index := 0
+var _quiet_noise_look_position := Vector3.ZERO
+var _quiet_noise_look_time := 0.0
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -92,7 +102,7 @@ func refresh_preview_navigation() -> void:
 func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool) -> bool:
     # This is a manual preview hook. Production relocation timing/candidate choice
     # remains a stalking-system decision; Bell chase categorically rejects it.
-    if _preview_bell_active or current_state != &"PATROL" or not is_instance_valid(player_camera):
+    if _preview_bell_active or current_state not in [&"PATROL", &"INVESTIGATE"] or not is_instance_valid(player_camera):
         return false
     if _monster_body_visible_from_camera(global_position, player_camera):
         return false
@@ -117,6 +127,24 @@ func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7)
     else:
         noise_relocation_requested.emit(source_position)
 
+func receive_noise(event: NoiseEvent) -> void:
+    if _preview_bell_active:
+        return
+    if current_state == &"INVESTIGATE":
+        if global_position.distance_to(event.source_position) <= preview_door_investigation_radius:
+            _quiet_noise_look_position = event.source_position
+            _quiet_noise_look_time = preview_quiet_noise_turn_seconds
+        return
+    if event.level == NoiseEvent.NoiseLevel.LOUD:
+        receive_preview_door_noise(event.source_position, 0.7)
+        return
+    if current_state != &"PATROL" or randf() > 0.3:
+        return
+    if global_position.distance_to(event.source_position) > preview_door_investigation_radius:
+        return
+    _quiet_noise_look_position = event.source_position
+    _quiet_noise_look_time = preview_quiet_noise_turn_seconds
+
 func begin_preview_investigation(source_position: Vector3) -> void:
     if _preview_bell_active or current_state in [&"SHORT_CHASE", &"BELL_CHASE"]:
         return
@@ -124,6 +152,9 @@ func begin_preview_investigation(source_position: Vector3) -> void:
     _patrol_active = false
     _investigation_target = source_position
     _investigation_time = preview_door_investigation_seconds
+    _investigation_last_target_distance = global_position.distance_to(source_position)
+    _investigation_stall_time = 0.0
+    _investigation_relocation_retry_time = 0.0
     _navigation_agent.target_position = source_position
     _set_state(&"INVESTIGATE")
 
@@ -158,17 +189,28 @@ func _physics_process(delta: float) -> void:
         _update_short_chase(delta)
         return
 
-    if current_state == &"INVESTIGATE":
-        _update_investigation(delta)
-        return
-
     if _can_see_player():
         _set_state(&"SHORT_CHASE")
         _lost_sight_time = 0.0
         _update_short_chase(delta)
         return
 
+    if current_state == &"INVESTIGATE":
+        _update_investigation(delta)
+        _update_quiet_noise_look(delta)
+        return
+
     _update_patrol(delta)
+    _update_quiet_noise_look(delta)
+
+func _update_quiet_noise_look(delta: float) -> void:
+    if _quiet_noise_look_time <= 0.0 or current_state not in [&"PATROL", &"INVESTIGATE"]:
+        return
+    _quiet_noise_look_time = maxf(0.0, _quiet_noise_look_time - delta)
+    var direction := _quiet_noise_look_position - global_position
+    direction.y = 0.0
+    if direction.length_squared() > 0.001:
+        look_at(global_position + direction, Vector3.UP)
 
 func _update_investigation(delta: float) -> void:
     var direction := _navigation_agent.get_next_path_position() - global_position
@@ -204,6 +246,21 @@ func _update_investigation(delta: float) -> void:
                 _set_state(&"PATROL")
             _squeeze_amount = 0.0
             _apply_squeeze_shape()
+    _check_stuck_investigation(delta)
+
+func _check_stuck_investigation(delta: float) -> void:
+    if current_state != &"INVESTIGATE" or _preview_bell_active:
+        return
+    var target_distance := global_position.distance_to(_investigation_target)
+    if _investigation_last_target_distance - target_distance >= PREVIEW_INVESTIGATION_PROGRESS_EPSILON:
+        _investigation_stall_time = 0.0
+    else:
+        _investigation_stall_time += delta
+    _investigation_last_target_distance = target_distance
+    _investigation_relocation_retry_time = maxf(0.0, _investigation_relocation_retry_time - delta)
+    if _investigation_stall_time >= PREVIEW_STUCK_INVESTIGATION_SECONDS and _investigation_relocation_retry_time <= 0.0:
+        _investigation_relocation_retry_time = PREVIEW_STUCK_RELOCATION_RETRY_SECONDS
+        noise_relocation_requested.emit(_investigation_target)
 
 func _update_bell_chase() -> void:
     if not is_instance_valid(_player_target):

@@ -13,7 +13,7 @@ Items marked **DECISION** require human/team agreement before they can be made f
 ## Milestone 1 — Playable traversal
 
 - [ ] **Rhaiyn:** third-person walking, horizontal camera, collision-aware view.
-- [x] **Rhaiyn:** sprint/stamina slice with exported provisional capacity/drain/regeneration/delay/recovery threshold and existing WASD/Shift controls (2026-10-07); Player parser/scene checks and 21 headless physics checks passed. Full preview blocked by its existing parse error; manual tuning and input remapping/settings remain deferred. See Rhaiyn's `PROGRESS.md` section for provisional defaults/policy and verification details.
+- [x] **Rhaiyn:** sprint/stamina slice with exported provisional capacity/drain/regeneration/delay/recovery threshold and existing WASD/Shift controls (2026-10-07); Player parser/scene checks and 21 headless physics checks passed. A later headless run confirmed the merged school preview starts; manual stamina/crouch/noise tuning and input remapping/settings remain deferred. See Rhaiyn's `PROGRESS.md` section for provisional defaults/policy and verification details.
 - [ ] **Zion:** Nurse Office spawn, Main Office key placement, room/door data, start route traversable.
 - [ ] **Zion:** locked/open door behavior, permanent-open invariant, successful open event/noise.
 - [ ] **Rhaiyn/Zion:** interaction target and prompt wired through public request API.
