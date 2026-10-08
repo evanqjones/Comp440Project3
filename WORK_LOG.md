@@ -146,3 +146,79 @@ This log records the school-model and Godot-preview work completed with the user
 - Moved player visibility checks ahead of the INVESTIGATE branch. If the player is visible in the search cone, investigation now transitions to SHORT_CHASE immediately.
 - Nearby quiet walking and loud running events during INVESTIGATE set a short look target toward the sound source. Patrol's 30%/70% response behavior remains unchanged.
 - The headless Godot editor scan found no GDScript parse errors.
+
+## Item-room encounter preview (2026-10-07)
+
+- Read the new `After-School-AI-GDD/docs/interactions.docx` encounter notes and added glowing circle markers with floating names for School Keys, Weight, Book, Brush, Lab Coat, Ruler, Snack, and Front Door Key. Press E near a marker to collect it; preview pickups publish a loud noise event.
+- Added room-specific Monster preview behavior: guards the Weight and scans, slowly follows/searches the Library and disappears on Book pickup, switches between Art Room positions only while outside camera view, remains still and investigates loud sound in the Lab Room, reduces to a glowing face while shifting positions during the Ruler encounter, and patrols/chases by sight in the Cafeteria. Main Office keys have no special monster encounter. The Front Door Key begins permanent Bell chase and cannot be toggled off with Z.
+- The Ruler is assigned to Classroom B per user direction. No authoritative School inventory, objectives, checkpoints, or production item signals were added.
+- The current school blockout has no locker/table/shelf hiding cover, actual library maze, or Art Room human figures; the Ruler room also has not been darkened. The Monster behavior is wired for the preview, while those room visuals and props still need level geometry before the navigation/cover tactics can be judged. No runtime verification was run for this slice.
+
+## Science Classroom Lab Coat encounter (2026-10-08)
+
+- Moved the Lab Coat preview item circle to the northwest corner of the Science Classroom. The monster targets its southeast corner and faces east into the wall.
+- Walking and running noise events make it slowly turn and sweep its existing search cone toward the player. When the cone ray check sees the player, the existing SHORT_CHASE starts. Crouching emits no movement noise, so it does not provoke this turn.
+- After collecting the Lab Coat and exiting the Science Classroom, the monster waits for a valid Science Classroom window-side hallway marker, then relocates there only when both its current body and destination are outside the camera view or occluded. It resumes a short hallway patrol from that window.
+- This updates the preview placement from the interactions document's prior Lab Room assignment per the user's instruction. No runtime verification was run for this slice.
+
+## Science/Lab placement correction (2026-10-08)
+
+- Corrected the previous pass: Lab Coat marker is back in the Lab Room northwest corner. Entering the Science Classroom while it remains uncollected queues the monster's southeast-corner wall-facing appearance and its movement-noise/slow-turn/spotlight-chase behavior.
+- The scripted appearance still honors the camera visibility rule. When the player exits into the adjacent Lab Room, the monster queues a camera-safe spawn beyond a Science Classroom window and resumes hallway patrol.
+- No runtime verification was run for this correction.
+
+## Lab north-window stalk adjustment (2026-10-08)
+
+- Changed the post-transition stalk point to the hallway side of the Lab Room north window. On an off-camera-safe relocation, the monster turns toward the Lab Room and stands still there.
+- Paused automatic relocation during the stationary window stalk; Bell behavior can override it.
+- Supersedes the prior Science Classroom window/patrol destination note. No runtime verification was run.
+- Follow-up fix: if the Lab north-window lurk marker was not generated, the stalk computes the hallway-side target from the Lab floor bounds and snaps it to navigation. The teleport continues to require both current and destination positions to be outside camera view or occluded.
+
+## Lab Coat window response (2026-10-08)
+
+- Lab Coat pickup now makes the monster slide to the left along the hallway from the Lab north-window stalk using the navigation agent. Automatic relocation stays paused while it moves, then resumes from its previous countdown. Pickup before the stalk appears is also handled after the delayed off-camera spawn.
+- No runtime verification was run.
+
+## Library book maze preview (2026-10-08)
+
+- Moved the Book circle to the far-left corner from the Library west entry, created eight rectangular collision barriers before the navmesh bake, and made a winding route with false turns/dead ends. The route uses the existing doorway back to the school halls and onward toward the Lab; no new Library exit was added.
+- On first entry while the Book is uncollected, the monster appears inside the doorway's left side and navigates after the player at 0.22 m/s. Library encounter handling keeps it out of SHORT_CHASE.
+- Headless editor scan had no script parse errors; `git diff --check` passed. No runtime behavior verification was run.
+
+## Library zigzag revision (2026-10-08)
+
+- Moved the Book to the northeast corner and the monster's first-entry position to the northwest. Replaced the branching maze with four thicker collision rectangles forming a zigzag; the walls are in the navmesh bake, and the monster follows the player around them.
+- Increased the provisional Library follow speed to 0.32 m/s while preserving the no-chase encounter behavior.
+- No runtime gameplay verification was run.
+
+## Library maze authored in Blender (2026-10-08)
+
+- Added four editable `Library Maze Wall` objects under the `Library Maze Placeholders` collection in `assets.blend`, parented to Library Floor and tagged as bookshelf replacements. They are 0.35 m thick and form the zigzag to the northeast Book corner.
+- Exported `assets/school_blockout.glb` and removed runtime duplicate maze generation. The preview retains the northwest monster entry, northeast Book placement, and 0.32 m/s path-follow behavior.
+- Blender save/export and Godot headless asset reimport completed; `git diff --check` passed. Godot reported its Windows certificate store and user editor-settings write warnings. No gameplay runtime verification was run.
+
+## User-updated Library rectangles synchronized (2026-10-08)
+
+- Preserved the user's latest rectangle edits in `assets.blend`, re-exported `assets/school_blockout.glb`, and reimported the updated school model in Godot.
+- Godot completed the asset import with no script parse/import errors; `git diff --check` passed. The editor reported its known Windows certificate-store and outside-workspace settings warnings. No gameplay runtime verification was run.
+
+## Library maze follow speed adjustment (2026-10-08)
+
+- Increased provisional Book encounter follow speed to 0.5 m/s; maze navigation and no-chase behavior are unchanged.
+- No runtime verification was run.
+
+## Book pickup sink and stalking resume (2026-10-08)
+
+- Book pickup animates the monster sinking 3.2 m over 1.25 seconds with collision disabled, then hides it. The relocation timer resumes after the animation; a hidden source can relocate normally, while destinations still require off-camera/occlusion approval. Successful relocation makes the monster visible again. Bell or a new item encounter interrupts the sink safely.
+- Godot headless editor parse scan and `git diff --check` passed. Existing Windows certificate-store/settings warnings remain. No runtime gameplay verification was run.
+
+## Locker Room lockers and Weight response (2026-10-08)
+
+- Located the two Locker Room door openings from `assets.blend`; created six open-front rectangular locker placeholders in the preview along both side walls and spaced them away from the openings. E hides the player in the closest locker and E exits into its clear approach area; the hidden player is invisible, stationary, collision-free, and not targetable even during Bell pursuit.
+- Moved the Weight marker north. The room encounter now patrols north-to-south; any player or door noise triggers a fast approach and brief look before the monster resumes its patrol. The Weight encounter suppresses chase behavior.
+- Changed `scenes/school_blockout_preview.gd`, `scenes/monster_placeholder.gd`, `After-School-AI-GDD/docs/PROGRESS.md`. No runtime verification was run.
+- Follow-up: made E collect a nearby item before entering a locker; when already hidden, E continues to exit first. This resolves the overlapping Weight/locker interaction range. No gameplay run was performed for this input-priority change.
+- Follow-up: after Weight pickup, the monster now pathfinds toward the Gym at 3.5 m/s, using the existing doorway navigation links and squeeze behavior. Automatic relocation remains paused until it arrives, then resumes. Headless scene load completed without script parse errors; door traversal was not interactively tested.
+- Fixed the missing indentation under the preview-item `else` branch that caused Godot's parser error. A headless scene load completed without script parse errors. It still reports an existing missing `artroom floor` item warning and environment log/certificate-store warnings; no interactive gameplay verification was run.
+- Fixed the reported missing-floor warning by aligning the Brush/Artroom lookup with `Cafeteria Floor` (the floor carrying the Artroom label) and the Snack/Cafeteria lookup with `Cafe Floor` (the floor carrying the Cafeteria label). Updated room registration, cafeteria window markers, and excluded-floor lists to follow those names. Headless scene load now reports no script parse or missing-floor warnings; environment log/certificate-store warnings persist.
+- Consolidated final behavior/status: six open-front locker placeholders; E hides/exits safely; nearby item pickup takes priority on E; Weight is at the north; the Weight encounter patrols north–south, investigates any noise and returns to patrol without chasing; Weight pickup sends the monster running to the Gym at 3.5 m/s, after which the regular relocation timer resumes. Brush/Artroom and Snack/Cafeteria room-floor mappings match the Blender model. Changed files are `scenes/school_blockout_preview.gd`, `scenes/monster_placeholder.gd`, and `After-School-AI-GDD/docs/PROGRESS.md`. Headless scene load had no script-parse or missing-floor warnings. Interactive route/door traversal remains unchecked; closed doors block the monster.

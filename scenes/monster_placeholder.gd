@@ -15,7 +15,9 @@ extends CharacterBody3D
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
 @export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
+@export_range(0.05, 1.0, 0.05) var preview_book_follow_speed: float = 0.5
 @export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
+@export_range(5.0, 90.0, 1.0) var preview_science_turn_speed_degrees: float = 18.0
 
 const PREVIEW_STUCK_INVESTIGATION_SECONDS := 15.0
 const PREVIEW_STUCK_RELOCATION_RETRY_SECONDS := 1.0
@@ -53,6 +55,34 @@ var _bell_lurk_room_id: StringName = &""
 var _bell_lurk_marker_index := 0
 var _quiet_noise_look_position := Vector3.ZERO
 var _quiet_noise_look_time := 0.0
+var _preview_item_encounter: StringName = &""
+var _preview_item_room_bounds := AABB()
+var _preview_item_position := Vector3.ZERO
+var _preview_item_points: Array[Vector3] = []
+var _preview_item_waypoint_index := 0
+var _preview_item_refresh := 0.0
+var _preview_item_last_navigation_target := Vector3(INF, INF, INF)
+var _preview_item_switch_cooldown := 0.0
+var _preview_lab_attention_target := Vector3.ZERO
+var _preview_lab_attention_time := 0.0
+var _preview_item_removed := false
+var _search_cone: MeshInstance3D
+var _glowing_face: Node3D
+var _capsule_was_visible := true
+var _science_encounter_settled := false
+var _science_has_turn_target := false
+var _science_turn_target := Vector3.ZERO
+var _preview_window_stalk_active := false
+var _preview_window_slide_active := false
+var _preview_book_sink_active := false
+var _preview_book_sink_start_y := 0.0
+var _preview_book_sink_tween: Tween
+var _preview_player_hidden := false
+var _weight_investigation_active := false
+var _weight_investigation_target := Vector3.ZERO
+var _weight_look_time := 0.0
+var _preview_weight_escape_active := false
+var _preview_weight_escape_target := Vector3.ZERO
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -60,7 +90,382 @@ func _ready() -> void:
     _capsule_shape = _collision_shape.shape.duplicate() as CapsuleShape3D
     _collision_shape.shape = _capsule_shape
     _visual_capsule = $TallCapsule
+    _capsule_was_visible = _visual_capsule.visible
+    _search_cone = get_node_or_null("OpaqueSearchCone") as MeshInstance3D
     _create_opaque_search_cone()
+    _search_cone = get_node("OpaqueSearchCone") as MeshInstance3D
+    _create_preview_glowing_face()
+
+func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item_position: Vector3, points: Array[Vector3]) -> void:
+    if _preview_book_sink_active:
+        if is_instance_valid(_preview_book_sink_tween):
+            _preview_book_sink_tween.kill()
+        position.y = _preview_book_sink_start_y
+        _preview_book_sink_active = false
+    _preview_window_stalk_active = false
+    _preview_window_slide_active = false
+    _preview_item_encounter = encounter
+    _preview_item_room_bounds = room_bounds
+    _preview_item_position = item_position
+    _preview_item_points = points.duplicate()
+    _preview_item_waypoint_index = 0
+    _preview_item_refresh = 0.0
+    _preview_item_switch_cooldown = 2.5
+    _preview_lab_attention_time = 0.0
+    _preview_item_removed = false
+    _weight_investigation_active = false
+    _weight_look_time = 0.0
+    _science_encounter_settled = false
+    _science_has_turn_target = false
+    visible = true
+    collision_layer = 2
+    collision_mask = 1
+    _visual_capsule.visible = _capsule_was_visible
+    _search_cone.visible = true
+    _glowing_face.visible = false
+    _patrol_active = false
+    _set_state(&"PATROL")
+    _navigation_agent.target_desired_distance = 0.5
+    if encounter == &"lab_coat" and not _preview_item_points.is_empty():
+        _navigation_agent.target_position = _preview_item_points[0]
+    elif encounter == &"science_classroom" and not _preview_item_points.is_empty():
+        _navigation_agent.target_position = _preview_item_points[0]
+    elif encounter == &"weight" and _preview_item_points.size() >= 2:
+        var patrol_delta := _preview_item_points[1] - _preview_item_points[0]
+        patrol_delta.y = 0.0
+        _patrol_axis = patrol_delta.normalized()
+        _patrol_origin = (_preview_item_points[0] + _preview_item_points[1]) * 0.5
+        _patrol_origin.y = global_position.y
+        preview_patrol_half_length = patrol_delta.length() * 0.5
+        _patrol_progress = clampf((global_position - _patrol_origin).dot(_patrol_axis), -preview_patrol_half_length, preview_patrol_half_length)
+        _patrol_sign = 1.0 if _patrol_progress < preview_patrol_half_length else -1.0
+        _patrol_active = true
+    elif encounter == &"brush" or encounter == &"ruler":
+        _set_item_waypoint_target()
+
+func end_preview_item_encounter() -> void:
+    _science_encounter_settled = false
+    _science_has_turn_target = false
+    _preview_item_encounter = &""
+    _preview_item_points.clear()
+    _preview_lab_attention_time = 0.0
+    _visual_capsule.visible = _capsule_was_visible
+    _search_cone.visible = true
+    _glowing_face.visible = false
+    if visible:
+        _set_state(&"PATROL")
+
+func start_preview_window_stalk(facing_direction: Vector3, look_target: Vector3 = Vector3.ZERO) -> void:
+    _preview_window_stalk_active = true
+    _preview_window_slide_active = false
+    _patrol_active = false
+    velocity = Vector3.ZERO
+    if look_target != Vector3.ZERO:
+        var direction := look_target - global_position
+        direction.y = 0.0
+        if direction.length_squared() > 0.001:
+            facing_direction = direction.normalized()
+    facing_direction.y = 0.0
+    if facing_direction.length_squared() > 0.001:
+        look_at(global_position + facing_direction.normalized(), Vector3.UP)
+    _set_state(&"PATROL")
+
+func is_preview_window_stalking() -> bool:
+    return _preview_window_stalk_active
+
+func start_preview_window_left_slide(destination: Vector3) -> void:
+    if not _preview_window_stalk_active:
+        return
+    _preview_window_stalk_active = false
+    _preview_window_slide_active = true
+    _patrol_active = false
+    _navigation_agent.target_desired_distance = 0.2
+    _navigation_agent.target_position = destination
+    velocity = Vector3.ZERO
+
+func is_preview_window_sliding() -> bool:
+    return _preview_window_slide_active
+
+func on_preview_item_collected(item_id: StringName) -> void:
+    if item_id == &"book":
+        _start_preview_book_sink()
+    elif item_id == &"brush":
+        _visual_capsule.visible = true
+        _search_cone.visible = true
+        _glowing_face.visible = false
+    elif item_id == &"front_door_key":
+        end_preview_item_encounter()
+
+func begin_preview_weight_escape(destination: Vector3) -> void:
+    _preview_item_encounter = &""
+    _weight_investigation_active = false
+    _preview_weight_escape_target = destination
+    _preview_weight_escape_active = true
+    _patrol_active = false
+    _navigation_agent.target_desired_distance = 0.75
+    _navigation_agent.target_position = destination
+    velocity = Vector3.ZERO
+
+func is_preview_weight_escape_active() -> bool:
+    return _preview_weight_escape_active
+
+func _start_preview_book_sink() -> void:
+    if _preview_book_sink_active:
+        return
+    _preview_item_removed = true
+    _preview_item_encounter = &""
+    _preview_window_stalk_active = false
+    _preview_window_slide_active = false
+    _preview_book_sink_active = true
+    _preview_book_sink_start_y = position.y
+    _patrol_active = false
+    velocity = Vector3.ZERO
+    collision_layer = 0
+    collision_mask = 0
+    _preview_book_sink_tween = create_tween()
+    _preview_book_sink_tween.set_trans(Tween.TRANS_QUAD)
+    _preview_book_sink_tween.set_ease(Tween.EASE_IN)
+    _preview_book_sink_tween.tween_property(self, "position:y", position.y - 3.2, 1.25)
+    _preview_book_sink_tween.tween_callback(_finish_preview_book_sink)
+
+func _finish_preview_book_sink() -> void:
+    position.y = _preview_book_sink_start_y
+    velocity = Vector3.ZERO
+    visible = false
+    collision_layer = 0
+    collision_mask = 0
+    _preview_book_sink_active = false
+    _patrol_active = false
+    _set_state(&"PATROL")
+
+func is_preview_book_sinking() -> bool:
+    return _preview_book_sink_active
+
+func _create_preview_glowing_face() -> void:
+    _glowing_face = Node3D.new()
+    _glowing_face.name = "PreviewRulerGlowFace"
+    add_child(_glowing_face)
+    var glow_material := StandardMaterial3D.new()
+    glow_material.albedo_color = Color(1.0, 0.93, 0.42, 1.0)
+    glow_material.emission_enabled = true
+    glow_material.emission = Color(1.0, 0.78, 0.2, 1.0)
+    glow_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    for eye_x in [-0.13, 0.13]:
+        var eye := MeshInstance3D.new()
+        eye.name = "GlowingEye"
+        var eye_mesh := SphereMesh.new()
+        eye_mesh.radius = 0.075
+        eye_mesh.height = 0.15
+        eye.mesh = eye_mesh
+        eye.position = Vector3(eye_x, 2.05, -0.4)
+        eye.material_override = glow_material
+        _glowing_face.add_child(eye)
+    var smile := MeshInstance3D.new()
+    smile.name = "GlowingSmile"
+    var smile_mesh := BoxMesh.new()
+    smile_mesh.size = Vector3(0.25, 0.045, 0.04)
+    smile.mesh = smile_mesh
+    smile.position = Vector3(0.0, 1.86, -0.415)
+    smile.material_override = glow_material
+    _glowing_face.add_child(smile)
+    _glowing_face.visible = false
+
+func _set_item_waypoint_target() -> void:
+    if _preview_item_points.is_empty():
+        return
+    _preview_item_waypoint_index = posmod(_preview_item_waypoint_index, _preview_item_points.size())
+    _navigation_agent.target_position = _preview_item_points[_preview_item_waypoint_index]
+
+func _preview_clamp_to_encounter_room(position: Vector3) -> Vector3:
+    var inset := 0.35
+    position.x = clampf(position.x, _preview_item_room_bounds.position.x + inset, _preview_item_room_bounds.end.x - inset)
+    position.z = clampf(position.z, _preview_item_room_bounds.position.z + inset, _preview_item_room_bounds.end.z - inset)
+    position.y = _preview_item_room_bounds.position.y + _preview_item_room_bounds.size.y
+    return position
+
+func _face_preview_direction(direction: Vector3, delta: float) -> void:
+    direction.y = 0.0
+    if direction.length_squared() < 0.001:
+        return
+    direction = direction.normalized()
+    var scan := sin(Time.get_ticks_msec() * 0.00055) * 0.5
+    var desired_basis := Basis(Vector3.UP, scan) * Basis.looking_at(direction, Vector3.UP)
+    global_basis = global_basis.slerp(desired_basis, minf(1.0, delta * 1.2))
+
+func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> void:
+    _preview_item_refresh = maxf(0.0, _preview_item_refresh - delta)
+    if _preview_item_refresh <= 0.0 or _preview_item_last_navigation_target.distance_to(target) > 0.35:
+        _navigation_agent.target_position = target
+        _preview_item_last_navigation_target = target
+        _preview_item_refresh = 0.25
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if _navigation_agent.is_navigation_finished() or direction.length() <= _navigation_agent.target_desired_distance or direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    direction = direction.normalized()
+    velocity = direction * speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
+
+func _turn_science_toward(source_position: Vector3) -> void:
+    if _preview_item_encounter != &"science_classroom" or _preview_bell_active:
+        return
+    _science_turn_target = source_position
+    _science_has_turn_target = true
+
+func _update_science_classroom_encounter(delta: float) -> void:
+    if _preview_item_points.is_empty():
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    var corner_position := _preview_item_points[0]
+    if not _science_encounter_settled and global_position.distance_to(corner_position) > 0.65:
+        _move_preview_item_toward(corner_position, 0.35, delta)
+        return
+    velocity = Vector3.ZERO
+    move_and_slide()
+    if not _science_encounter_settled:
+        rotation.y = -PI * 0.5 # Face east into the wall from the southeast corner.
+        _science_encounter_settled = true
+    if _science_has_turn_target:
+        var direction := _science_turn_target - global_position
+        direction.y = 0.0
+        if direction.length_squared() > 0.001:
+            var target_yaw := atan2(-direction.x, -direction.z)
+            rotation.y = rotate_toward(rotation.y, target_yaw, deg_to_rad(preview_science_turn_speed_degrees) * delta)
+
+func _update_preview_item_encounter(delta: float) -> void:
+    _preview_item_refresh = maxf(0.0, _preview_item_refresh - delta)
+    _preview_item_switch_cooldown = maxf(0.0, _preview_item_switch_cooldown - delta)
+    match _preview_item_encounter:
+        &"weight":
+            _update_weight_encounter(delta)
+        &"book":
+            if not is_instance_valid(_player_target):
+                return
+            var chase_target := _preview_clamp_to_encounter_room(_player_target.global_position)
+            var distance_to_player := global_position.distance_to(chase_target)
+            if distance_to_player > 1.1:
+                _move_preview_item_toward(chase_target, preview_book_follow_speed, delta)
+            else:
+                velocity = Vector3.ZERO
+                move_and_slide()
+                _face_preview_direction(_player_target.global_position - global_position, delta)
+        &"brush":
+            _visual_capsule.visible = true
+            if not _preview_item_points.is_empty() and global_position.distance_to(_preview_item_points[0]) > 0.8:
+                _move_preview_item_toward(_preview_item_points[0], 0.25, delta)
+                return
+            if _preview_item_switch_cooldown <= 0.0 and not _preview_item_points.is_empty() and is_instance_valid(_player_target):
+                var camera: Camera3D = _player_target.get("player_camera")
+                if is_instance_valid(camera) and not _monster_body_visible_from_camera(global_position, camera):
+                    var current_index := _preview_item_waypoint_index
+                    var next_index := (current_index + 1) % _preview_item_points.size()
+                    var destination: Vector3 = _preview_item_points[next_index]
+                    if not _monster_body_visible_from_camera(destination, camera):
+                        global_position = destination
+                        velocity = Vector3.ZERO
+                        _preview_item_waypoint_index = next_index
+                _preview_item_switch_cooldown = randf_range(2.0, 4.0)
+        &"lab_coat":
+            var target := _preview_item_points[0] if not _preview_item_points.is_empty() else global_position
+            if _preview_lab_attention_time > 0.0:
+                _preview_lab_attention_time = maxf(0.0, _preview_lab_attention_time - delta)
+                target = _preview_clamp_to_encounter_room(_preview_lab_attention_target)
+            _move_preview_item_toward(target, 0.3 if _preview_lab_attention_time > 0.0 else 0.2, delta)
+            if _preview_lab_attention_time > 0.0:
+                _face_preview_direction(_preview_lab_attention_target - global_position, delta)
+        &"science_classroom":
+            _update_science_classroom_encounter(delta)
+        &"ruler":
+            if not _preview_item_points.is_empty() and global_position.distance_to(_preview_item_points[0]) > 0.8:
+                _glowing_face.visible = false
+                _move_preview_item_toward(_preview_item_points[0], 0.25, delta)
+                return
+            _visual_capsule.visible = false
+            _search_cone.visible = false
+            _glowing_face.visible = true
+            if _preview_item_switch_cooldown <= 0.0 and not _preview_item_points.is_empty() and is_instance_valid(_player_target):
+                var camera: Camera3D = _player_target.get("player_camera")
+                if is_instance_valid(camera) and not _monster_body_visible_from_camera(global_position, camera):
+                    _preview_item_waypoint_index = (_preview_item_waypoint_index + 1) % _preview_item_points.size()
+                    global_position = _preview_item_points[_preview_item_waypoint_index]
+                    velocity = Vector3.ZERO
+                _preview_item_switch_cooldown = randf_range(3.0, 5.0)
+        &"snack":
+            if _preview_item_points.is_empty():
+                return
+            if _navigation_agent.is_navigation_finished() or global_position.distance_to(_preview_item_points[_preview_item_waypoint_index]) < 0.65:
+                _preview_item_waypoint_index = (_preview_item_waypoint_index + 1) % _preview_item_points.size()
+                _set_item_waypoint_target()
+            _move_preview_item_toward(_preview_item_points[_preview_item_waypoint_index], 0.4, delta)
+
+func _start_weight_investigation(source_position: Vector3) -> void:
+    var target := _preview_clamp_to_encounter_room(source_position)
+    target.y = global_position.y
+    _weight_investigation_target = target
+    _weight_investigation_active = true
+    _weight_look_time = 0.0
+
+func _update_weight_encounter(delta: float) -> void:
+    if _weight_investigation_active:
+        var direction := _weight_investigation_target - global_position
+        direction.y = 0.0
+        if direction.length() > 0.55:
+            direction = direction.normalized()
+            velocity = direction * 1.5
+            move_and_slide()
+            _face_preview_direction(direction, delta)
+        else:
+            velocity = Vector3.ZERO
+            move_and_slide()
+            _face_preview_direction(direction, delta)
+            _weight_look_time += delta
+            if _weight_look_time >= 1.6:
+                _weight_investigation_active = false
+                _weight_look_time = 0.0
+                if _preview_item_points.size() >= 2:
+                    var offset := global_position - _patrol_origin
+                    _patrol_progress = clampf(offset.dot(_patrol_axis), -preview_patrol_half_length, preview_patrol_half_length)
+                    if _patrol_progress <= -preview_patrol_half_length + 0.05:
+                        _patrol_sign = 1.0
+                    elif _patrol_progress >= preview_patrol_half_length - 0.05:
+                        _patrol_sign = -1.0
+        return
+    _update_patrol(delta)
+
+func _update_weight_escape(delta: float) -> void:
+    var to_destination := _preview_weight_escape_target - global_position
+    to_destination.y = 0.0
+    if to_destination.length() <= 1.0:
+        _preview_weight_escape_active = false
+        _patrol_active = false
+        velocity = Vector3.ZERO
+        move_and_slide()
+        _set_state(&"PATROL")
+        return
+    var direction := _navigation_agent.get_next_path_position() - global_position
+    direction.y = 0.0
+    if _navigation_agent.is_navigation_finished() or direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    direction = direction.normalized()
+    var delta_time := maxf(delta, 0.001)
+    var low_header_ahead := _has_low_overhead_clearance(direction)
+    _update_squeeze(direction, delta_time, low_header_ahead)
+    var centerline_is_clear := _is_centerline_clear(direction)
+    velocity = direction * 3.5
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
+    var squeezed_against_doorway := low_header_ahead
+    for collision_index in get_slide_collision_count():
+        if absf(get_slide_collision(collision_index).get_normal().y) < 0.5 and centerline_is_clear:
+            squeezed_against_doorway = true
+            break
+    _update_squeeze(direction, delta_time, squeezed_against_doorway)
 
 func start_preview_hallway_patrol(axis: Vector3) -> void:
     axis.y = 0.0
@@ -85,6 +490,12 @@ func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT)
 func set_player_target(player: Node3D) -> void:
     _player_target = player
 
+func set_preview_player_hidden(hidden: bool) -> void:
+    _preview_player_hidden = hidden
+    if hidden and current_state == &"SHORT_CHASE":
+        _lost_sight_time = 0.0
+        _set_state(&"PATROL")
+
 func set_safe_rooms(room_ids: Array[StringName]) -> void:
     _active_safe_room_ids = room_ids.duplicate()
     _bell_lurk_room_id = &""
@@ -99,26 +510,42 @@ func refresh_preview_navigation() -> void:
         _has_bell_target = false
         _bell_path_refresh = 0.0
 
-func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool) -> bool:
+func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool, minimum_distance: float = 2.0, patrol_axis: Vector3 = Vector3.RIGHT) -> bool:
     # This is a manual preview hook. Production relocation timing/candidate choice
     # remains a stalking-system decision; Bell chase categorically rejects it.
     if _preview_bell_active or current_state not in [&"PATROL", &"INVESTIGATE"] or not is_instance_valid(player_camera):
         return false
-    if _monster_body_visible_from_camera(global_position, player_camera):
+    var hidden_after_book := _preview_item_removed and not visible
+    if not hidden_after_book and _monster_body_visible_from_camera(global_position, player_camera):
         return false
     if _monster_body_visible_from_camera(destination, player_camera):
         return false
-    if destination.distance_to(global_position) < 2.0:
+    if destination.distance_to(global_position) < minimum_distance:
         return false
     var nav_map: RID = _navigation_agent.get_navigation_map()
     if NavigationServer3D.map_get_closest_point(nav_map, destination).distance_to(destination) > 1.35:
         return false
     global_position = destination
     velocity = Vector3.ZERO
-    set_preview_spawn_behavior(in_hallway, _patrol_axis)
+    if hidden_after_book:
+        visible = true
+        collision_layer = 2
+        collision_mask = 1
+        _preview_item_removed = false
+    set_preview_spawn_behavior(in_hallway, patrol_axis)
     return true
 
 func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7) -> void:
+    if _preview_item_encounter == &"weight" and not _preview_bell_active:
+        _start_weight_investigation(source_position)
+        return
+    if _preview_item_encounter == &"science_classroom" and not _preview_bell_active:
+        _turn_science_toward(source_position)
+        return
+    if _preview_item_encounter == &"lab_coat" and not _preview_bell_active:
+        _preview_lab_attention_target = source_position
+        _preview_lab_attention_time = 5.0
+        return
     if _preview_bell_active or current_state != &"PATROL" or randf() > clampf(loudness, 0.0, 1.0):
         return
     var distance := global_position.distance_to(source_position)
@@ -129,6 +556,16 @@ func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7)
 
 func receive_noise(event: NoiseEvent) -> void:
     if _preview_bell_active:
+        return
+    if _preview_item_encounter == &"science_classroom":
+        _turn_science_toward(event.source_position)
+        return
+    if _preview_item_encounter == &"weight":
+        _start_weight_investigation(event.source_position)
+        return
+    if _preview_item_encounter == &"lab_coat" and event.level == NoiseEvent.NoiseLevel.LOUD:
+        _preview_lab_attention_target = event.source_position
+        _preview_lab_attention_time = 5.0
         return
     if current_state == &"INVESTIGATE":
         if global_position.distance_to(event.source_position) <= preview_door_investigation_radius:
@@ -175,6 +612,19 @@ func set_preview_bell_active(active: bool) -> void:
     if _preview_bell_active == active:
         return
     _preview_bell_active = active
+    if active:
+        if _preview_book_sink_active:
+            if is_instance_valid(_preview_book_sink_tween):
+                _preview_book_sink_tween.kill()
+            position.y = _preview_book_sink_start_y
+            _preview_book_sink_active = false
+        if _preview_item_removed:
+            visible = true
+            collision_layer = 2
+            collision_mask = 1
+            _preview_item_removed = false
+        _preview_window_stalk_active = false
+        _preview_window_slide_active = false
     _lost_sight_time = 0.0
     _bell_path_refresh = 0.0
     _has_bell_target = false
@@ -185,11 +635,47 @@ func _physics_process(delta: float) -> void:
         _update_bell_chase()
         return
 
+    if _preview_weight_escape_active:
+        _update_weight_escape(delta)
+        return
+
+    if _preview_window_stalk_active:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+
+    if _preview_book_sink_active or (_preview_item_removed and not visible):
+        velocity = Vector3.ZERO
+        return
+
+    if _preview_window_slide_active:
+        var slide_direction := _navigation_agent.get_next_path_position() - global_position
+        slide_direction.y = 0.0
+        if _navigation_agent.is_navigation_finished() or slide_direction.length() <= _navigation_agent.target_desired_distance or slide_direction.length_squared() < 0.01:
+            _preview_window_slide_active = false
+            velocity = Vector3.ZERO
+            move_and_slide()
+            return
+        velocity = slide_direction.normalized() * 0.85
+        move_and_slide()
+        return
+
     if current_state == &"SHORT_CHASE":
         _update_short_chase(delta)
         return
 
-    if _can_see_player():
+    if _can_see_player() and _preview_item_encounter != &"weight":
+        if _preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled):
+            _set_state(&"SHORT_CHASE")
+            _lost_sight_time = 0.0
+            _update_short_chase(delta)
+            return
+
+    if _preview_item_encounter != &"":
+        _update_preview_item_encounter(delta)
+        return
+
+    if _can_see_player() and _preview_item_encounter != &"weight":
         _set_state(&"SHORT_CHASE")
         _lost_sight_time = 0.0
         _update_short_chase(delta)
@@ -263,6 +749,10 @@ func _check_stuck_investigation(delta: float) -> void:
         noise_relocation_requested.emit(_investigation_target)
 
 func _update_bell_chase() -> void:
+    if _preview_player_hidden:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
     if not is_instance_valid(_player_target):
         velocity = Vector3.ZERO
         move_and_slide()
@@ -488,6 +978,8 @@ func _update_short_chase(delta: float) -> void:
     look_at(global_position + direction, Vector3.UP)
 
 func _can_see_player() -> bool:
+    if _preview_player_hidden:
+        return false
     if not is_instance_valid(_player_target):
         return false
 
