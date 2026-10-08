@@ -48,16 +48,19 @@ func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
+        get_viewport().set_input_as_handled()
+        return
+
+    if not _input_enabled:
+        return
+
     if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_E or event.physical_keycode == KEY_E):
         # Consume on the next physics tick, after rechecking range and occlusion.
         _pending_interaction_target_id = _interaction_target_id
         if _interaction_target_id != &"":
             get_viewport().set_input_as_handled()
-        return
-
-    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED else Input.MOUSE_MODE_CAPTURED
-        get_viewport().set_input_as_handled()
         return
 
     if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
@@ -73,14 +76,20 @@ func _unhandled_input(event: InputEvent) -> void:
         )
 
 func _physics_process(delta: float) -> void:
-    var wants_to_crouch := Input.is_physical_key_pressed(KEY_CTRL)
-    _set_crouching(wants_to_crouch)
+    # Keep the current capsule pose while disabled; do not stand up under cover.
+    if _input_enabled:
+        _set_crouching(Input.is_physical_key_pressed(KEY_CTRL))
     _noise_time_remaining = maxf(0.0, _noise_time_remaining - delta)
 
-    var input_axis := Vector2(
-        float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
-        float(Input.is_physical_key_pressed(KEY_W)) - float(Input.is_physical_key_pressed(KEY_S))
-    ).limit_length(1.0)
+    var input_axis := Vector2.ZERO
+    if _input_enabled:
+        input_axis = Vector2(
+            float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
+            float(Input.is_physical_key_pressed(KEY_W)) - float(Input.is_physical_key_pressed(KEY_S))
+        ).limit_length(1.0)
+    else:
+        velocity.x = 0.0
+        velocity.z = 0.0
 
     var forward := -camera_pivot.global_basis.z
     forward.y = 0.0
@@ -90,7 +99,7 @@ func _physics_process(delta: float) -> void:
     right = right.normalized()
     var move_direction := (right * input_axis.x + forward * input_axis.y).normalized()
     var sprint_held := Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT)
-    var is_sprinting := not _is_crouching and sprint_held and _can_sprint(input_axis.length_squared() > 0.0)
+    var is_sprinting := _input_enabled and not _is_crouching and sprint_held and _can_sprint(input_axis.length_squared() > 0.0)
     var target_speed := crouch_speed if _is_crouching else (run_speed if is_sprinting else move_speed)
 
     if not is_on_floor():
@@ -107,17 +116,28 @@ func _physics_process(delta: float) -> void:
 
     move_and_slide()
     _update_movement_state(is_sprinting)
-    if _is_crouching:
+    if _input_enabled and _is_crouching:
         _movement_state = &"crouching"
     _emit_movement_noise(input_axis.length_squared() > 0.0, is_sprinting)
     _update_stamina(delta)
     _update_interaction_target()
     _consume_interaction_request()
 
+func set_input_enabled(enabled: bool) -> void:
+    super.set_input_enabled(enabled)
+    if not _input_enabled:
+        velocity.x = 0.0
+        velocity.z = 0.0
+        _movement_state = &"idle"
+        _pending_interaction_target_id = &""
+        _interaction_target_id = &""
+        if is_instance_valid(interaction_prompt):
+            interaction_prompt.hide()
+
 func _update_interaction_target() -> void:
     _interaction_target_id = &""
     var camera := get_viewport().get_camera_3d()
-    if camera == player_camera:
+    if _input_enabled and camera == player_camera:
         var ray_start := camera.global_position
         var ray_end := ray_start - camera.global_basis.z * interaction_distance
         var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
@@ -136,7 +156,7 @@ func _update_interaction_target() -> void:
 func _consume_interaction_request() -> void:
     var requested_id := _pending_interaction_target_id
     _pending_interaction_target_id = &""
-    if requested_id != &"" and requested_id == _interaction_target_id:
+    if _input_enabled and requested_id != &"" and requested_id == _interaction_target_id:
         interaction_requested.emit(requested_id)
 
 func _set_crouching(crouching: bool) -> void:
