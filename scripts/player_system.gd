@@ -21,6 +21,7 @@ var movement_state: StringName:
 		return _movement_state
 
 var _movement_state: StringName = &"idle"
+var _input_enabled: bool = true
 var _stamina: float = 0.0
 var _stamina_exhausted: bool = false
 var _stamina_regeneration_delay_remaining: float = 0.0
@@ -57,6 +58,10 @@ func _update_stamina(delta: float) -> void:
 
 func get_world_position() -> Vector3:
 	return global_position
+
+
+func set_input_enabled(enabled: bool) -> void:
+	_input_enabled = enabled
 
 
 func _update_movement_state(is_running: bool) -> void:
