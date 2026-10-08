@@ -105,3 +105,10 @@ This log records the school-model and Godot-preview work completed with the user
 - After a successful off-camera relocation to the spawn nearest a far door sound, the monster now enters INVESTIGATE and follows its navigation path toward that doorway at a provisional 0.5 m/s.
 - Nearby noise uses the same investigation path. Its investigation timer now starts after arrival so a slow approach is not cut short; hallway pacing resumes afterward if the monster had been pacing before the noise.
 - Headless behavior check started the monster at a hallway spawn 6.01 m from the Auditorium door. After 120 frames it remained in INVESTIGATE, had moved 0.44 m, and was 5.60 m from the sound.
+
+## Monster traverses open doors (2026-10-07)
+
+- Added a navigation link for every unique school doorway. Links stay disabled while a door is closed, enable after the door finishes opening, and disable again when the Locker Room one-way door closes. Opening a door refreshes an active investigation or Bell chase route.
+- Added low-header detection ahead of the monster so it compresses to the existing 1.8 m preview squeeze height before reaching 2.15 m door headers. Investigation movement now uses the same squeeze/collision handling as Bell chase and restores its normal capsule on return to patrol.
+- The Locker Room door waits while the monster is investigating or chasing, or physically occupying its threshold, so it does not shut in front of an active crossing.
+- Headless CharacterBody check confirmed the monster remained on its side of a closed Auditorium door, then crossed the same doorway after it opened. The navigation map created 24 door links.
