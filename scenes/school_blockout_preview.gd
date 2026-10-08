@@ -85,6 +85,7 @@ func _ready() -> void:
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
+	player.noise_emitted.connect(monster.receive_noise)
 	monster.noise_relocation_requested.connect(_relocate_nearest_spawn_to_noise)
     _create_monster_spawn_locations()
     _camera_hallway_spawn = _make_spawn_panel(

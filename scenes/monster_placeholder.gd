@@ -15,6 +15,7 @@ extends CharacterBody3D
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
 @export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
+@export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
 
 signal monster_state_changed(state_id: StringName)
 signal noise_relocation_requested(source_position: Vector3)
@@ -43,6 +44,8 @@ var _resume_hallway_patrol_after_investigation := false
 var _active_safe_room_ids: Array[StringName] = []
 var _bell_lurk_room_id: StringName = &""
 var _bell_lurk_marker_index := 0
+var _quiet_noise_look_position := Vector3.ZERO
+var _quiet_noise_look_time := 0.0
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -117,6 +120,17 @@ func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7)
     else:
         noise_relocation_requested.emit(source_position)
 
+func receive_noise(event: NoiseEvent) -> void:
+    if event.level == NoiseEvent.NoiseLevel.LOUD:
+        receive_preview_door_noise(event.source_position, 0.7)
+        return
+    if _preview_bell_active or current_state != &"PATROL" or randf() > 0.3:
+        return
+    if global_position.distance_to(event.source_position) > preview_door_investigation_radius:
+        return
+    _quiet_noise_look_position = event.source_position
+    _quiet_noise_look_time = preview_quiet_noise_turn_seconds
+
 func begin_preview_investigation(source_position: Vector3) -> void:
     if _preview_bell_active or current_state in [&"SHORT_CHASE", &"BELL_CHASE"]:
         return
@@ -169,6 +183,16 @@ func _physics_process(delta: float) -> void:
         return
 
     _update_patrol(delta)
+    _update_quiet_noise_look(delta)
+
+func _update_quiet_noise_look(delta: float) -> void:
+    if _quiet_noise_look_time <= 0.0 or current_state != &"PATROL":
+        return
+    _quiet_noise_look_time = maxf(0.0, _quiet_noise_look_time - delta)
+    var direction := _quiet_noise_look_position - global_position
+    direction.y = 0.0
+    if direction.length_squared() > 0.001:
+        look_at(global_position + direction, Vector3.UP)
 
 func _update_investigation(delta: float) -> void:
     var direction := _navigation_agent.get_next_path_position() - global_position

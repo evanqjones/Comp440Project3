@@ -126,3 +126,11 @@ This log records the school-model and Godot-preview work completed with the user
 - Headless preview output reported 7 window tiles and 45 total Bell waypoints. Bell mode chose exactly three rooms. A temporary targeted check placed the player in a selected room and confirmed the monster remained outside its bounds with a lurking destination outside the room; temporary test code and logs were removed.
 - This does not replace Zion's authoritative safe-room selection or lighting and does not change the open GDD decisions for the production system.
 - Follow-up: excluded the Lobby from the eligible safe-room pool. A headless Bell run confirmed the Lobby was not selected and three other rooms were still selected.
+
+## Player crouch and movement-noise preview (2026-10-07)
+
+- Added a shared typed `NoiseEvent` data class and a Player `noise_emitted` signal. Moving while walking emits QUIET events every 0.8 seconds; running emits LOUD events on the same cadence. Crouching emits no movement noise.
+- Ctrl crouches the placeholder capsule, lowers its camera, prevents sprint, and uses a provisional 2.0 m/s speed. Shift sprint remains 5.5 m/s; walking remains 3.5 m/s.
+- Wired Player noise to the preview Monster. Nearby quiet events have a 30% chance to make it face the player without moving. Loud events use the existing 70% door-noise response chance and its investigation or off-camera relocation behavior. Bell suppresses both responses.
+- Godot 4.7.2 headless editor scan and preview startup completed without GDScript errors. Preview startup created 24 doors and the existing window markers. Godot emitted its environment-only root-certificate and editor-settings warnings; no project script errors appeared.
+- Values are provisional preview tuning. No footstep audio clips were added; these events drive gameplay response only.
