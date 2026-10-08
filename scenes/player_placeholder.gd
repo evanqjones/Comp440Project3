@@ -13,6 +13,7 @@ extends "res://scripts/player_system.gd"
 @onready var player_camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
 
 func _ready() -> void:
+    super._ready()
     camera_pivot.rotation.x = -0.2
     $CameraPivot/SpringArm3D.spring_length = camera_distance
     player_camera.current = true
@@ -49,7 +50,8 @@ func _physics_process(delta: float) -> void:
     right.y = 0.0
     right = right.normalized()
     var move_direction := (right * input_axis.x + forward * input_axis.y).normalized()
-    var is_sprinting := Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT)
+    var sprint_held := Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT)
+    var is_sprinting := sprint_held and _can_sprint(input_axis.length_squared() > 0.0)
     var target_speed := run_speed if is_sprinting else move_speed
 
     if not is_on_floor():
@@ -66,3 +68,4 @@ func _physics_process(delta: float) -> void:
 
     move_and_slide()
     _update_movement_state(is_sprinting)
+    _update_stamina(delta)
