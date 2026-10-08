@@ -112,3 +112,8 @@ This log records the school-model and Godot-preview work completed with the user
 - Added low-header detection ahead of the monster so it compresses to the existing 1.8 m preview squeeze height before reaching 2.15 m door headers. Investigation movement now uses the same squeeze/collision handling as Bell chase and restores its normal capsule on return to patrol.
 - The Locker Room door waits while the monster is investigating or chasing, or physically occupying its threshold, so it does not shut in front of an active crossing.
 - Headless CharacterBody check confirmed the monster remained on its side of a closed Auditorium door, then crossed the same doorway after it opened. The navigation map created 24 door links.
+
+## Smaller monster doorway squeeze (2026-10-07)
+
+- Reduced the monster's minimum squeeze width from 30% to 15% and minimum height from 1.8 m to 1.2 m so it can fit more tightly through open doorway gaps.
+- Headless CharacterBody check confirmed it stays blocked by the closed Auditorium door, crosses once the door opens, reaches 1.2 m during passage, and restores its 3 m standing height afterward.
