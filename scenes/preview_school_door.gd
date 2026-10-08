@@ -10,6 +10,7 @@ signal open_state_changed(door_id: StringName, is_open: bool)
 var door_id: StringName
 var is_double := false
 var one_way := false
+var interaction_locked := false
 var operable_side := Vector3.ZERO
 var _player: Node3D
 var _monster: Node3D
@@ -35,7 +36,7 @@ func configure(id: StringName, center: Vector3, width: float, height: float, thi
 	_create_panels(width, height, thickness)
 
 func _physics_process(_delta: float) -> void:
-	if _opened or _is_animating or not is_instance_valid(_player):
+	if interaction_locked or _opened or _is_animating or not is_instance_valid(_player):
 		return
 	var offset := _player.global_position - global_position
 	offset.y = 0.0
@@ -45,6 +46,9 @@ func _physics_process(_delta: float) -> void:
 	if one_way and offset.dot(operable_side) <= 0.0:
 		return
 	_open_door(offset)
+
+func set_interaction_locked(locked: bool) -> void:
+	interaction_locked = locked
 
 func _create_panels(width: float, height: float, thickness: float) -> void:
 	var panel_count := 2 if is_double else 1
@@ -116,6 +120,25 @@ func _close_one_way_after_player_passes() -> void:
 	tween.set_parallel(true)
 	for hinge in _panels:
 		tween.tween_property(hinge, "rotation:y", 0.0, preview_open_seconds)
+	tween.set_parallel(false)
+	await tween.finished
+	_opened = false
+	_is_animating = false
+	_noise_emitted = false
+	for body in _panel_bodies:
+		if is_instance_valid(body):
+			body.collision_layer = 1
+			body.collision_mask = 1
+	open_state_changed.emit(door_id, false)
+
+func slam_shut() -> void:
+	if not _opened or _panels.is_empty():
+		return
+	_is_animating = true
+	var tween := create_tween()
+	tween.set_parallel(true)
+	for hinge in _panels:
+		tween.tween_property(hinge, "rotation:y", 0.0, 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	tween.set_parallel(false)
 	await tween.finished
 	_opened = false

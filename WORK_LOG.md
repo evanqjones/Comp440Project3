@@ -249,3 +249,25 @@ This log records the school-model and Godot-preview work completed with the user
 - **Ruler interaction timeout (2026-10-08):** Added a 20-second fallback. After it expires, the monster continues its hallway sequence until a regular spawn candidate is available with both its current body and destination outside camera view/occluded. It then performs one regular off-camera relocation, ends the Ruler interaction, resets the speed escalation, and resumes the standard 10-second relocation cycle. Failed visibility checks keep the fallback pending and retry every 0.25 seconds.
 - **Ruler spotlight tracking (2026-10-08):** During the Ruler hallway encounter, the spotlight now turns independently to face the player continuously. When the player hides in a hallway locker, it holds its last direction and resumes tracking after the player exits. No gameplay verification was run.
 - **Ruler spotlight chase (2026-10-08):** If the player is inside the tracked spotlight with clear line of sight, the monster now enters chase at 8.0 m/s. Hiding in a hallway locker prevents spotlight detection and exits chase so the scripted hallway pass can continue. No gameplay verification was run.
+
+## Auditorium Microphone preview encounter (2026-10-08)
+
+- Added the Microphone to the Auditorium preview item list at the north end of a straight center aisle. `assets.blend` now contains an editable raised stage, two centered steps, a microphone stand placeholder, and 30 separate chairs flanking the aisle. Re-exported `assets/school_blockout.glb` for Godot.
+- The monster waits onstage facing away. Walking/running noise makes it slowly turn toward the player; a clear spotlight hit starts its navigation chase. Collecting the Microphone starts a persistent chase toward the auditorium exit. Once the player clears the south doorway, the double door slams shut and the monster returns to the regular off-camera relocation cycle.
+- Chair backs and the stage/steps are collision-backed in the preview. The controller uses provisional 28-degree/second turning, 1.5-second noise attention, 0.8-second sight grace, and 6.5 m/s chase settings. The encounter remains preview-only; no authoritative inventory or objective integration was added.
+- Blender background save and GLB export succeeded. Godot was not run for this change, so spotlight cover, stage-step navigation, door selection, and the exit sequence remain unchecked in gameplay.
+- Changed `create_auditorium_microphone.py`, `assets.blend`, `assets/school_blockout.glb`, `scenes/auditorium_microphone_encounter.gd`, `scenes/school_blockout_preview.gd`, and `scenes/preview_school_door.gd`.
+
+- Microphone encounter follow-up (2026-10-08): Extended the stage spotlight cone to cover the Auditorium's width and depth. After the Microphone is collected, the monster turns toward the player for 3 seconds, pauses for 3 seconds, then begins chasing. The Auditorium south door is locked until pickup, then opens manually with E when the player is beside it; it closes after the player exits. No runtime play-check was performed.
+
+- Auditorium door interaction fix (2026-10-08): Increased the manual E interaction reach across the door plane to 2 meters because player collision prevents standing directly against the panel. No runtime play-check was performed.
+
+- Auditorium door behavior clarification (2026-10-08): Removed E-key opening. The south door opens automatically as the player approaches after the Microphone pickup, then is locked and slammed shut at encounter end so it cannot reopen. No runtime play-check was performed.
+
+- Auditorium auto-open reliability (2026-10-08): Expanded the south exit automatic approach trigger to 2 meters so the player capsule can activate it before door collision stops forward movement. It remains locked until Microphone pickup and locked again after the escape. No runtime play-check was performed.
+
+- Auditorium door restored to standard behavior (2026-10-08): Removed its initial lock and special trigger distance; it now uses the default proximity opening shared by the other preview doors. The encounter locks and slams it shut at the end so it cannot reopen. No runtime play-check was performed.
+
+- Microphone noise response turn (2026-10-08): Increased the monster's noise-response turning speed to 90 degrees per second; its normal turn speed remains unchanged. No runtime play-check was performed.
+
+- Microphone pursuit spotlight aim (2026-10-08): During B-line/chase movement, the monster turns toward the player's current position so its searchlight tracks the player while navigation routes around obstacles. No runtime play-check was performed.
