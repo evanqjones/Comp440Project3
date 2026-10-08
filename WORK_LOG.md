@@ -271,3 +271,11 @@ This log records the school-model and Godot-preview work completed with the user
 - Microphone noise response turn (2026-10-08): Increased the monster's noise-response turning speed to 90 degrees per second; its normal turn speed remains unchanged. No runtime play-check was performed.
 
 - Microphone pursuit spotlight aim (2026-10-08): During B-line/chase movement, the monster turns toward the player's current position so its searchlight tracks the player while navigation routes around obstacles. No runtime play-check was performed.
+
+- Artroom Brush ceiling search preview (2026-10-08): After Brush pickup, the monster hangs upside down from the Artroom ceiling and sweeps a narrow opaque triangular light over the floor from the room center. The Cafeteria-labeled Artroom hallway door closes and becomes one-way from the hallway side; the player must exit via the Bathroom door and reach the circulation hallway. The controller then restores the monster's regular position, collision, and AI and restarts the normal relocation timer. No runtime or interactive route verification was performed.
+
+- Artroom Brush spotlight chase (2026-10-08): The sweeping floor light now checks for player overlap with line of sight; when it catches the player, the light stops and the monster drops to floor height and B-lines toward them at its normal chase speed. Godot headless scene load completed without script errors.
+
+- Artroom Brush chase visibility fix (2026-10-08): On spotlight detection the monster is made visible, restored upright, moved to player floor height, and its physics processing is re-enabled before the chase starts. Headless scene load has no script errors.
+
+- Library maze restored to Godot export (2026-10-08): Re-exported the existing school contents plus all seven Library Maze Wall objects from assets.blend into assets/school_blockout.glb. Godot reimported the GLB, and the headless preview loads with doors/navigation initialized and no script errors.

@@ -74,6 +74,7 @@ var _preview_item_switch_cooldown := 0.0
 var _preview_lab_attention_target := Vector3.ZERO
 var _preview_lab_attention_time := 0.0
 var _preview_item_removed := false
+var _preview_brush_chase_active := false
 var _search_cone: MeshInstance3D
 var _glowing_face: Node3D
 var _capsule_was_visible := true
@@ -192,6 +193,7 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
         _set_item_waypoint_target()
 
 func end_preview_item_encounter() -> void:
+    _preview_brush_chase_active = false
     _science_encounter_settled = false
     _science_has_turn_target = false
     _preview_item_encounter = &""
@@ -207,6 +209,21 @@ func end_preview_item_encounter() -> void:
     _glowing_face.visible = false
     if visible:
         _set_state(&"PATROL")
+
+func begin_preview_brush_chase() -> void:
+    if not is_instance_valid(_player_target):
+        return
+    _preview_brush_chase_active = true
+    _preview_item_encounter = &"brush"
+    _preview_player_hidden = false
+    visible = true
+    global_position.y = _player_target.global_position.y
+    global_rotation = Vector3(0.0, global_rotation.y, 0.0)
+    collision_layer = 2
+    collision_mask = 1
+    velocity = Vector3.ZERO
+    set_physics_process(true)
+    _set_state(&"SHORT_CHASE")
 
 func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: Vector3, beyond_science: Vector3, beyond_a: Vector3, science_corner: Vector3, a_corner: Vector3) -> void:
     _preview_window_stalk_active = false
@@ -870,6 +887,10 @@ func _physics_process(delta: float) -> void:
         _update_bell_chase()
         return
 
+    if _preview_brush_chase_active:
+        _update_brush_chase()
+        return
+
     if _preview_weight_escape_active:
         _update_weight_escape(delta)
         return
@@ -932,6 +953,21 @@ func _physics_process(delta: float) -> void:
 
     _update_patrol(delta)
     _update_quiet_noise_look(delta)
+
+func _update_brush_chase() -> void:
+    if not is_instance_valid(_player_target):
+        velocity = Vector3.ZERO
+        return
+    var direction := _player_target.global_position - global_position
+    direction.y = 0.0
+    if direction.length_squared() < 0.01:
+        velocity = Vector3.ZERO
+        move_and_slide()
+        return
+    direction = direction.normalized()
+    velocity = direction * preview_short_chase_speed
+    move_and_slide()
+    look_at(global_position + direction, Vector3.UP)
 
 func _update_quiet_noise_look(delta: float) -> void:
     if _quiet_noise_look_time <= 0.0 or current_state not in [&"PATROL", &"INVESTIGATE"]:
