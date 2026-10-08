@@ -22,6 +22,8 @@ var movement_state: StringName:
 
 var _movement_state: StringName = &"idle"
 var _input_enabled: bool = true
+var _capture_presentation_active: bool = false
+var _capture_checkpoint_id: StringName = &""
 var _stamina: float = 0.0
 var _stamina_exhausted: bool = false
 var _stamina_regeneration_delay_remaining: float = 0.0
@@ -67,7 +69,21 @@ func get_current_room_id() -> StringName:
 
 
 func set_input_enabled(enabled: bool) -> void:
+	# No resume until authoritative restoration is wired; never bypass capture.
+	if enabled and _capture_presentation_active:
+		return
 	_input_enabled = enabled
+
+
+func play_capture_and_respawn(checkpoint_id: StringName) -> void:
+	if _capture_presentation_active or String(checkpoint_id).strip_edges().is_empty():
+		return
+	_capture_checkpoint_id = checkpoint_id
+	_capture_presentation_active = true
+	set_input_enabled(false)
+	# Scaffold only: remain disabled awaiting School's authoritative restoration.
+	# Integration must supply restored position/state before clearing the guard
+	# and re-enabling. No timeout, guessed spawn, or fake checkpoint restore.
 
 
 func _update_movement_state(is_running: bool) -> void:

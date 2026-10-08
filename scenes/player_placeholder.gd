@@ -22,6 +22,7 @@ const PREVIEW_TARGET_ID_META: StringName = &"player_preview_target_id"
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var player_camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
 @onready var interaction_prompt: Label = $InteractionPrompt/Label
+@onready var capture_status: Label = $InteractionPrompt/CaptureStatus
 
 signal noise_emitted(event: NoiseEvent)
 
@@ -46,6 +47,7 @@ func _ready() -> void:
     $CameraPivot/SpringArm3D.spring_length = camera_distance
     player_camera.current = true
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+    capture_status.visible = _capture_presentation_active
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
@@ -133,6 +135,13 @@ func set_input_enabled(enabled: bool) -> void:
         _interaction_target_id = &""
         if is_instance_valid(interaction_prompt):
             interaction_prompt.hide()
+
+func play_capture_and_respawn(checkpoint_id: StringName) -> void:
+    if _capture_presentation_active:
+        return
+    super.play_capture_and_respawn(checkpoint_id)
+    if is_instance_valid(capture_status):
+        capture_status.visible = _capture_presentation_active
 
 func _update_interaction_target() -> void:
     _interaction_target_id = &""
