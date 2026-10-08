@@ -23,6 +23,7 @@ var _standing_camera_height := 1.32
 var _standing_visual_height := 1.65
 
 func _ready() -> void:
+    super._ready()
     var collision_shape := $CollisionShape3D as CollisionShape3D
     collision_shape.shape = collision_shape.shape.duplicate() as CapsuleShape3D
     var visual := $CapsuleVisual as MeshInstance3D
@@ -70,7 +71,8 @@ func _physics_process(delta: float) -> void:
     right.y = 0.0
     right = right.normalized()
     var move_direction := (right * input_axis.x + forward * input_axis.y).normalized()
-    var is_sprinting := not _is_crouching and (Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT))
+    var sprint_held := Input.is_key_pressed(KEY_SHIFT) or Input.is_physical_key_pressed(KEY_SHIFT)
+    var is_sprinting := not _is_crouching and sprint_held and _can_sprint(input_axis.length_squared() > 0.0)
     var target_speed := crouch_speed if _is_crouching else (run_speed if is_sprinting else move_speed)
 
     if not is_on_floor():
@@ -90,6 +92,7 @@ func _physics_process(delta: float) -> void:
     if _is_crouching:
         _movement_state = &"crouching"
     _emit_movement_noise(input_axis.length_squared() > 0.0, is_sprinting)
+    _update_stamina(delta)
 
 func _set_crouching(crouching: bool) -> void:
     if _is_crouching == crouching:
