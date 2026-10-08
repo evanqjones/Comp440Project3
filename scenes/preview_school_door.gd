@@ -3,7 +3,7 @@ extends Node3D
 signal opened(door_id: StringName, world_position: Vector3, loudness: float)
 
 @export var preview_open_seconds: float = 1.8
-@export var preview_trigger_distance: float = 1.35
+@export var preview_trigger_distance: float = 2.0
 
 var door_id: StringName
 var is_double := false
@@ -11,6 +11,7 @@ var one_way := false
 var operable_side := Vector3.ZERO
 var _player: Node3D
 var _panels: Array[Node3D] = []
+var _panel_bodies: Array[AnimatableBody3D] = []
 var _opened := false
 var _door_width := 1.0
 
@@ -60,6 +61,7 @@ func _create_panels(width: float, height: float, thickness: float) -> void:
 		body.collision_layer = 1
 		body.collision_mask = 1
 		hinge.add_child(body)
+		_panel_bodies.append(body)
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = panel_mesh
 		mesh.material_override = material
@@ -85,3 +87,13 @@ func _open_door(player_offset: Vector3) -> void:
 		var swing_sign := -player_side * hinge_sign
 		var tween := create_tween()
 		tween.tween_property(hinge, "rotation:y", swing_sign * PI * 0.48, preview_open_seconds)
+	if not _panel_bodies.is_empty():
+		var final_tween: Tween = create_tween()
+		final_tween.tween_interval(preview_open_seconds)
+		final_tween.tween_callback(_release_open_door_collision)
+
+func _release_open_door_collision() -> void:
+	for body in _panel_bodies:
+		if is_instance_valid(body):
+			body.collision_layer = 0
+			body.collision_mask = 0
