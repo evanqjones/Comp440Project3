@@ -24,6 +24,7 @@ var _spawn_marker_nodes_visible := true
 var _preview_relocation_elapsed := 0.0
 var _camera_hallway_spawn: Node3D
 var _camera_hallway_spawn_valid := false
+var _door_navigation_links: Dictionary = {}
 
 func _ready() -> void:
     _load_school_model()
@@ -34,6 +35,7 @@ func _ready() -> void:
     await get_tree().physics_frame
     await get_tree().physics_frame
     await _wait_for_navigation_map()
+	_create_school_door_navigation_links()
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
@@ -114,6 +116,44 @@ func _build_school_navigation() -> void:
     if region.navigation_mesh.get_polygon_count() == 0:
         push_error("Monster navigation mesh bake produced no walkable polygons.")
 
+func _create_school_door_navigation_links() -> void:
+	var navigation_agent: NavigationAgent3D = monster.get_node("NavigationAgent3D")
+	var navigation_map: RID = navigation_agent.get_navigation_map()
+	NavigationServer3D.map_set_link_connection_radius(navigation_map, 1.0)
+	var region := get_node("MonsterNavigation") as NavigationRegion3D
+	var created := 0
+	for door in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door_node := door as Node3D
+		var normal: Vector3 = door_node.global_basis * Vector3.BACK
+		var start_world := NavigationServer3D.map_get_closest_point(navigation_map, door_node.global_position + normal * 1.1)
+		var end_world := NavigationServer3D.map_get_closest_point(navigation_map, door_node.global_position - normal * 1.1)
+		if start_world.distance_to(end_world) < 0.5:
+			push_warning("Skipping door navigation link with coincident endpoints: %s" % door_node.name)
+			continue
+		var link := NavigationLink3D.new()
+		link.name = "OpenDoorNavigation_%s" % String(door_node.get("door_id")).replace(" ", "_")
+		link.bidirectional = true
+		link.navigation_layers = 1
+		link.enabled = false
+		link.start_position = region.to_local(start_world)
+		link.end_position = region.to_local(end_world)
+		region.add_child(link)
+		_door_navigation_links[door_node.get("door_id")] = link
+		created += 1
+	print("Door navigation links created: %d" % created)
+
+func _on_preview_door_state_changed(door_id: StringName, is_open: bool) -> void:
+	var link: NavigationLink3D = _door_navigation_links.get(door_id)
+	if link == null:
+		return
+	link.enabled = is_open
+	if is_open:
+		_refresh_monster_navigation_after_door_open()
+
+func _refresh_monster_navigation_after_door_open() -> void:
+	await get_tree().physics_frame
+	monster.refresh_preview_navigation()
+
 func _create_school_doors() -> void:
 	var headers: Array[MeshInstance3D] = []
 	_collect_door_headers(school, headers)
@@ -154,12 +194,15 @@ func _create_school_doors() -> void:
 			2.15,
 			maxf(0.08, minf(thickness, 0.18)),
 			player,
+			monster,
 			width >= 1.8,
 			one_way,
 			allowed_side,
 			bounds.size.z > bounds.size.x
 		)
 		door.opened.connect(_on_preview_door_opened)
+		door.open_state_changed.connect(_on_preview_door_state_changed)
+		door.add_to_group("preview_school_doors")
 		school.add_child(door)
 	print("Preview doors created: %d" % centers.size())
 

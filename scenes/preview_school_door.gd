@@ -1,6 +1,7 @@
 extends Node3D
 
 signal opened(door_id: StringName, world_position: Vector3, loudness: float)
+signal open_state_changed(door_id: StringName, is_open: bool)
 
 @export var preview_open_seconds: float = 1.8
 @export var preview_trigger_distance: float = 0.5
@@ -11,6 +12,7 @@ var is_double := false
 var one_way := false
 var operable_side := Vector3.ZERO
 var _player: Node3D
+var _monster: Node3D
 var _panels: Array[Node3D] = []
 var _panel_bodies: Array[AnimatableBody3D] = []
 var _opened := false
@@ -19,10 +21,11 @@ var _is_animating := false
 var _noise_emitted := false
 
 func configure(id: StringName, center: Vector3, width: float, height: float, thickness: float,
-		player: Node3D, double_door: bool, restricted: bool, allowed_side: Vector3, along_z: bool) -> void:
+		player: Node3D, monster: Node3D, double_door: bool, restricted: bool, allowed_side: Vector3, along_z: bool) -> void:
 	door_id = id
 	position = center
 	_player = player
+	_monster = monster
 	_door_width = width
 	is_double = double_door
 	one_way = restricted
@@ -98,12 +101,13 @@ func _open_door(player_offset: Vector3) -> void:
 	await tween.finished
 	_release_open_door_collision()
 	_is_animating = false
+	open_state_changed.emit(door_id, true)
 	if one_way:
 		_close_one_way_after_player_passes()
 
 func _close_one_way_after_player_passes() -> void:
 	await get_tree().create_timer(preview_one_way_hold_seconds).timeout
-	while is_instance_valid(_player) and not _player_cleared_of_doorway():
+	while is_instance_valid(_player) and (not _actor_cleared_of_doorway(_player) or not _monster_clear_of_doorway()):
 		await get_tree().physics_frame
 	if not is_instance_valid(_player):
 		return
@@ -121,10 +125,19 @@ func _close_one_way_after_player_passes() -> void:
 		if is_instance_valid(body):
 			body.collision_layer = 1
 			body.collision_mask = 1
+	open_state_changed.emit(door_id, false)
 
-func _player_cleared_of_doorway() -> bool:
-	var offset := global_basis.inverse() * (_player.global_position - global_position)
+func _actor_cleared_of_doorway(actor: Node3D) -> bool:
+	var offset := global_basis.inverse() * (actor.global_position - global_position)
 	return absf(offset.x) > _door_width * 0.5 + 0.55 or absf(offset.z) > 0.7
+
+func _monster_clear_of_doorway() -> bool:
+	if not is_instance_valid(_monster):
+		return true
+	var state: StringName = _monster.get("current_state")
+	if state in [&"INVESTIGATE", &"SHORT_CHASE", &"BELL_CHASE"]:
+		return false
+	return _actor_cleared_of_doorway(_monster)
 
 func _release_open_door_collision() -> void:
 	for body in _panel_bodies:
