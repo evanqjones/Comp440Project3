@@ -3,7 +3,8 @@ extends Node3D
 signal opened(door_id: StringName, world_position: Vector3, loudness: float)
 
 @export var preview_open_seconds: float = 1.8
-@export var preview_trigger_distance: float = 2.0
+@export var preview_trigger_distance: float = 0.5
+@export var preview_one_way_hold_seconds: float = 1.0
 
 var door_id: StringName
 var is_double := false
@@ -14,6 +15,8 @@ var _panels: Array[Node3D] = []
 var _panel_bodies: Array[AnimatableBody3D] = []
 var _opened := false
 var _door_width := 1.0
+var _is_animating := false
+var _noise_emitted := false
 
 func configure(id: StringName, center: Vector3, width: float, height: float, thickness: float,
 		player: Node3D, double_door: bool, restricted: bool, allowed_side: Vector3, along_z: bool) -> void:
@@ -29,7 +32,7 @@ func configure(id: StringName, center: Vector3, width: float, height: float, thi
 	_create_panels(width, height, thickness)
 
 func _physics_process(_delta: float) -> void:
-	if _opened or not is_instance_valid(_player):
+	if _opened or _is_animating or not is_instance_valid(_player):
 		return
 	var offset := _player.global_position - global_position
 	offset.y = 0.0
@@ -76,21 +79,52 @@ func _create_panels(width: float, height: float, thickness: float) -> void:
 
 func _open_door(player_offset: Vector3) -> void:
 	_opened = true
-	opened.emit(door_id, global_position, 0.7)
+	_is_animating = true
+	if not _noise_emitted:
+		_noise_emitted = true
+		opened.emit(door_id, global_position, 0.7)
 	var normal := global_basis * Vector3.BACK
 	var player_side := 1.0 if player_offset.dot(normal) >= 0.0 else -1.0
 	if one_way:
 		player_side = 1.0 if operable_side.dot(normal) >= 0.0 else -1.0
+	var tween := create_tween()
+	tween.set_parallel(true)
 	for index in range(_panels.size()):
 		var hinge := _panels[index]
-		var hinge_sign := 1.0 if not is_double or index == 1 else -1.0
+		var hinge_sign := -1.0 if index == 0 else 1.0
 		var swing_sign := -player_side * hinge_sign
-		var tween := create_tween()
 		tween.tween_property(hinge, "rotation:y", swing_sign * PI * 0.48, preview_open_seconds)
-	if not _panel_bodies.is_empty():
-		var final_tween: Tween = create_tween()
-		final_tween.tween_interval(preview_open_seconds)
-		final_tween.tween_callback(_release_open_door_collision)
+	tween.set_parallel(false)
+	await tween.finished
+	_release_open_door_collision()
+	_is_animating = false
+	if one_way:
+		_close_one_way_after_player_passes()
+
+func _close_one_way_after_player_passes() -> void:
+	await get_tree().create_timer(preview_one_way_hold_seconds).timeout
+	while is_instance_valid(_player) and not _player_cleared_of_doorway():
+		await get_tree().physics_frame
+	if not is_instance_valid(_player):
+		return
+	_is_animating = true
+	var tween := create_tween()
+	tween.set_parallel(true)
+	for hinge in _panels:
+		tween.tween_property(hinge, "rotation:y", 0.0, preview_open_seconds)
+	tween.set_parallel(false)
+	await tween.finished
+	_opened = false
+	_is_animating = false
+	_noise_emitted = false
+	for body in _panel_bodies:
+		if is_instance_valid(body):
+			body.collision_layer = 1
+			body.collision_mask = 1
+
+func _player_cleared_of_doorway() -> bool:
+	var offset := global_basis.inverse() * (_player.global_position - global_position)
+	return absf(offset.x) > _door_width * 0.5 + 0.55 or absf(offset.z) > 0.7
 
 func _release_open_door_collision() -> void:
 	for body in _panel_bodies:

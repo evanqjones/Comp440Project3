@@ -92,3 +92,10 @@ This log records the school-model and Godot-preview work completed with the user
 - Added tunable export values for investigation radius/duration and opening duration/trigger distance. The preview door noise probability and strength are the user's requested 70%; investigation range/duration are temporary values pending tuning.
 - Godot headless editor import and preview launch completed with no script/navigation errors. Godot printed environment warnings because its user log directory and Windows certificate store are unavailable in this sandbox.
 - Fixed doorway traversal after the initial mechanic pass: extended the approach distance to 2.0 m and disabled the leaves' collision after they finish opening. A headless CharacterBody movement check crossed a double Auditorium door and a single Classroom A door; it confirmed the Locker Room hallway door stays closed from the hall side and opens/pass-through works from the Locker Room side.
+
+## Door push direction and Locker Room return (2026-10-07)
+
+- Changed the approach threshold to 0.5 m so a door opens when the capsule reaches it. Door leaves now swing away from the player's side in the direction of the push.
+- The Locker Room hallway door is the only auto-closing door. It remains open until the player clears the doorway, waits a provisional 1 second, swings shut over 1.8 seconds, then restores collision. It still cannot be opened from the hallway side.
+- The GDD says doors never close; this Locker Room-only close behavior follows the user's explicit exception. The hold time is provisional.
+- Headless behavior check passed on the Auditorium double door and Classroom A single door: both triggered at 0.35 m, swung away from the player, released collision, and allowed the capsule to cross. The Locker Room door ignored the hallway side, opened from inside, stayed open while occupied, then closed and restored collision after the player passed through.
