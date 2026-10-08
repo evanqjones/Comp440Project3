@@ -311,7 +311,7 @@ func _choose_preview_safe_rooms() -> void:
 	var eligible_rooms: Array[StringName] = []
 	for waypoint in get_tree().get_nodes_in_group("preview_bell_lurk_points"):
 		var room_id: StringName = waypoint.get_meta("preview_room_id", &"")
-		if room_id != &"" and not eligible_rooms.has(room_id):
+		if room_id != &"" and room_id != &"lobby" and not eligible_rooms.has(room_id):
 			eligible_rooms.append(room_id)
 	eligible_rooms.shuffle()
 	for index in mini(3, eligible_rooms.size()):

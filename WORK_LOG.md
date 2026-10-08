@@ -121,7 +121,8 @@ This log records the school-model and Godot-preview work completed with the user
 ## Bell safe-room window lurking preview (2026-10-07)
 
 - Read `GAME_SPEC.md`, `CONTRACTS.md`, `EVAN_MONSTER.md`, and `ZION_SCHOOL.md`. Kept this feature in the Godot preview only because School owns authoritative safe-room selection and lighting; reused the existing Monster `set_safe_rooms(Array[StringName])` contract surface.
-- On Z Bell start, the preview randomly chooses exactly three eligible rooms with walkable perimeter routes, adds a warm OmniLight3D to each, and disables open-door navigation links that enter those room bounds. Z off clears the active room list and removes the lights.
+- On Z Bell start, the preview randomly chooses exactly three eligible rooms with walkable perimeter routes, excluding the Lobby, adds a warm OmniLight3D to each, and disables open-door navigation links that enter those room bounds. Z off clears the active room list and removes the lights.
 - Added purple floor tiles at each walkable hallway-facing window side from the supplied room window layout (seven sites in the current model). Added 38 unmarked outer perimeter waypoints across the rooms; they support a slow 0.35 m/s Bell loop while the player is inside an active safe room.
 - Headless preview output reported 7 window tiles and 45 total Bell waypoints. Bell mode chose exactly three rooms. A temporary targeted check placed the player in a selected room and confirmed the monster remained outside its bounds with a lurking destination outside the room; temporary test code and logs were removed.
 - This does not replace Zion's authoritative safe-room selection or lighting and does not change the open GDD decisions for the production system.
+- Follow-up: excluded the Lobby from the eligible safe-room pool. A headless Bell run confirmed the Lobby was not selected and three other rooms were still selected.
