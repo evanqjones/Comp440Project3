@@ -17,6 +17,47 @@ const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
 const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
 const PREVIEW_DOOR_SCRIPT := preload("res://scenes/preview_school_door.gd")
+const PREVIEW_ROOM_FLOORS: Array[Dictionary] = [
+	{"id": &"auditorium", "floor": "auditorium floor"},
+	{"id": &"lobby", "floor": "lobby floor"},
+	{"id": &"gym", "floor": "gym floor"},
+	{"id": &"cafeteria", "floor": "cafeteria floor"},
+	{"id": &"library", "floor": "library floor"},
+	{"id": &"science_classroom", "floor": "science classroom floor"},
+	{"id": &"classroom_a", "floor": "classroom a floor"},
+	{"id": &"classroom_b", "floor": "classroom b floor"},
+	{"id": &"classroom_c", "floor": "classroom c floor"},
+	{"id": &"classroom_d", "floor": "classroom d floor"},
+	{"id": &"classroom_e", "floor": "classroom e floor"},
+	{"id": &"nurse_office", "floor": "nurse office floor"},
+	{"id": &"main_office", "floor": "main office floor"},
+	{"id": &"bathroom", "floor": "bathroom floor"},
+	{"id": &"artroom", "floor": "artroom floor"},
+	{"id": &"lab_room", "floor": "lab room floor"},
+	{"id": &"locker_room", "floor": "locker room floor"}
+]
+const PREVIEW_WINDOW_SIDES: Array[Dictionary] = [
+	{"id": &"lobby_south", "room": &"lobby", "floor": "lobby floor", "side": "south"},
+	{"id": &"lobby_east", "room": &"lobby", "floor": "lobby floor", "side": "east"},
+	{"id": &"classroom_e_west", "room": &"classroom_e", "floor": "classroom e floor", "side": "west"},
+	{"id": &"classroom_e_north", "room": &"classroom_e", "floor": "classroom e floor", "side": "north"},
+	{"id": &"classroom_c_west", "room": &"classroom_c", "floor": "classroom c floor", "side": "west"},
+	{"id": &"classroom_d_east", "room": &"classroom_d", "floor": "classroom d floor", "side": "east"},
+	{"id": &"cafeteria_south", "room": &"cafeteria", "floor": "cafeteria floor", "side": "south"},
+	{"id": &"cafeteria_north", "room": &"cafeteria", "floor": "cafeteria floor", "side": "north"},
+	{"id": &"science_west", "room": &"science_classroom", "floor": "science classroom floor", "side": "west"},
+	{"id": &"science_south", "room": &"science_classroom", "floor": "science classroom floor", "side": "south"},
+	{"id": &"lab_room_north", "room": &"lab_room", "floor": "lab room floor", "side": "north"},
+	{"id": &"lab_room_classroom_shared", "room": &"lab_room", "floor": "lab room floor", "side": "west"},
+	{"id": &"classroom_a_west", "room": &"classroom_a", "floor": "classroom a floor", "side": "west"},
+	{"id": &"classroom_a_north", "room": &"classroom_a", "floor": "classroom a floor", "side": "north"},
+	{"id": &"classroom_b_north", "room": &"classroom_b", "floor": "classroom b floor", "side": "north"},
+	{"id": &"classroom_b_south", "room": &"classroom_b", "floor": "classroom b floor", "side": "south"},
+	{"id": &"gym_south", "room": &"gym", "floor": "gym floor", "side": "south"},
+	{"id": &"gym_east", "room": &"gym", "floor": "gym floor", "side": "east"},
+	{"id": &"library_north", "room": &"library", "floor": "library floor", "side": "north"},
+	{"id": &"library_south", "room": &"library", "floor": "library floor", "side": "south"}
+]
 
 var _bell_debug_active := false
 var _spawn_markers: Array[Node3D] = []
@@ -25,6 +66,9 @@ var _preview_relocation_elapsed := 0.0
 var _camera_hallway_spawn: Node3D
 var _camera_hallway_spawn_valid := false
 var _door_navigation_links: Dictionary = {}
+var _active_safe_room_ids: Array[StringName] = []
+var _safe_room_lights: Dictionary = {}
+var _window_lurk_markers: Dictionary = {}
 
 func _ready() -> void:
     _load_school_model()
@@ -36,6 +80,8 @@ func _ready() -> void:
     await get_tree().physics_frame
     await _wait_for_navigation_map()
 	_create_school_door_navigation_links()
+	_register_preview_room_floors()
+	_create_window_lurk_markers()
     _place_player_at_nurse_office()
     _place_monster_deeper_in_hallway()
     monster.set_player_target(player)
@@ -146,9 +192,179 @@ func _on_preview_door_state_changed(door_id: StringName, is_open: bool) -> void:
 	var link: NavigationLink3D = _door_navigation_links.get(door_id)
 	if link == null:
 		return
-	link.enabled = is_open
-	if is_open:
+	var enable_link := is_open and not _door_connects_active_safe_room(link)
+	link.enabled = enable_link
+	if enable_link:
 		_refresh_monster_navigation_after_door_open()
+
+func _register_preview_room_floors() -> void:
+	for room in PREVIEW_ROOM_FLOORS:
+		var floor_node := _find_room_floor(school, room["floor"])
+		if floor_node == null or floor_node.mesh == null:
+			continue
+		var bounds: AABB = floor_node.global_transform * floor_node.mesh.get_aabb()
+		floor_node.add_to_group("preview_safe_room_floors")
+		floor_node.set_meta("preview_room_id", room["id"])
+		floor_node.set_meta("preview_room_bounds", bounds)
+
+func _create_window_lurk_markers() -> void:
+	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
+	var rejected_floors: Array[String] = []
+	for room in PREVIEW_ROOM_FLOORS:
+		rejected_floors.append(room["floor"])
+	for window in PREVIEW_WINDOW_SIDES:
+		var floor_node := _find_room_floor(school, window["floor"])
+		if floor_node == null or floor_node.mesh == null:
+			continue
+		var bounds: AABB = floor_node.global_transform * floor_node.mesh.get_aabb()
+		var window_world := bounds.position + bounds.size * 0.5
+		var outside_direction := Vector3.ZERO
+		match window["side"]:
+			"north":
+				window_world.z = bounds.position.z
+				outside_direction = Vector3.BACK
+			"south":
+				window_world.z = bounds.end.z
+				outside_direction = Vector3.FORWARD
+			"west":
+				window_world.x = bounds.position.x
+				outside_direction = Vector3.LEFT
+			"east":
+				window_world.x = bounds.end.x
+				outside_direction = Vector3.RIGHT
+		window_world.y = bounds.position.y + bounds.size.y
+		var desired_position := window_world + outside_direction * 0.75
+		var hallway_position: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
+		if hallway_position.distance_to(desired_position) > 1.25 or _position_in_excluded_floor(hallway_position, rejected_floors):
+			continue
+		var room_id: StringName = window["room"]
+		var marker := Node3D.new()
+		marker.name = "WindowLurk_" + String(window["id"])
+		marker.set_meta("preview_room_id", room_id)
+		marker.set_meta("window_id", window["id"])
+		marker.set_meta("lurk_angle", atan2(hallway_position.z - (bounds.position.z + bounds.size.z * 0.5), hallway_position.x - (bounds.position.x + bounds.size.x * 0.5)))
+		marker.add_to_group("preview_window_lurk_points")
+		marker.add_to_group("preview_bell_lurk_points")
+		var tile := MeshInstance3D.new()
+		tile.name = "PurpleWindowLurkTile"
+		var tile_mesh := QuadMesh.new()
+		tile_mesh.size = Vector2(0.62, 0.62)
+		tile.mesh = tile_mesh
+		tile.position.y = 0.035
+		tile.rotation_degrees.x = 90.0
+		tile.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var tile_material := StandardMaterial3D.new()
+		tile_material.albedo_color = Color(0.72, 0.16, 1.0, 1.0)
+		tile_material.emission_enabled = true
+		tile_material.emission = Color(0.48, 0.04, 0.9, 1.0)
+		tile_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		tile.material_override = tile_material
+		marker.add_child(tile)
+		school.add_child(marker)
+		marker.global_position = hallway_position
+		if not _window_lurk_markers.has(room_id):
+			_window_lurk_markers[room_id] = []
+		_window_lurk_markers[room_id].append(marker)
+	_create_safe_room_orbit_points(navigation_map, rejected_floors)
+	var room_marker_counts: Array[String] = []
+	for room_id in _window_lurk_markers:
+		room_marker_counts.append("%s=%d" % [String(room_id), _window_lurk_markers[room_id].size()])
+	print("Hallway window lurk tiles created: %d; Bell orbit points: %d (%s)" % [get_tree().get_nodes_in_group("preview_window_lurk_points").size(), get_tree().get_nodes_in_group("preview_bell_lurk_points").size(), ", ".join(room_marker_counts)])
+
+func _create_safe_room_orbit_points(navigation_map: RID, rejected_floors: Array[String]) -> void:
+	for room in PREVIEW_ROOM_FLOORS:
+		var room_id: StringName = room["id"]
+		var floor_node := _room_floor_for_id(room_id)
+		if floor_node == null:
+			continue
+		var bounds: AABB = floor_node.get_meta("preview_room_bounds")
+		var center := bounds.position + bounds.size * 0.5
+		var margin := 0.9
+		var orbit_positions: Array[Vector3] = [
+			Vector3(bounds.position.x - margin, bounds.end.y, bounds.position.z - margin),
+			Vector3(bounds.end.x + margin, bounds.end.y, bounds.position.z - margin),
+			Vector3(bounds.end.x + margin, bounds.end.y, bounds.end.z + margin),
+			Vector3(bounds.position.x - margin, bounds.end.y, bounds.end.z + margin)
+		]
+		for orbit_index in orbit_positions.size():
+			var desired_position := orbit_positions[orbit_index]
+			var hallway_position: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
+			if hallway_position.distance_to(desired_position) > 1.5 or _position_in_excluded_floor(hallway_position, rejected_floors):
+				continue
+			var duplicate_position := false
+			for existing in get_tree().get_nodes_in_group("preview_bell_lurk_points"):
+				if existing.get_meta("preview_room_id", &"") == room_id and (existing as Node3D).global_position.distance_to(hallway_position) < 0.6:
+					duplicate_position = true
+					break
+			if duplicate_position:
+				continue
+			var waypoint := Node3D.new()
+			waypoint.name = "RoomOrbit_%s_%d" % [String(room_id), orbit_index]
+			waypoint.set_meta("preview_room_id", room_id)
+			waypoint.set_meta("lurk_angle", atan2(hallway_position.z - center.z, hallway_position.x - center.x))
+			waypoint.add_to_group("preview_bell_lurk_points")
+			school.add_child(waypoint)
+			waypoint.global_position = hallway_position
+
+func _choose_preview_safe_rooms() -> void:
+	_active_safe_room_ids.clear()
+	var eligible_rooms: Array[StringName] = []
+	for waypoint in get_tree().get_nodes_in_group("preview_bell_lurk_points"):
+		var room_id: StringName = waypoint.get_meta("preview_room_id", &"")
+		if room_id != &"" and room_id != &"lobby" and not eligible_rooms.has(room_id):
+			eligible_rooms.append(room_id)
+	eligible_rooms.shuffle()
+	for index in mini(3, eligible_rooms.size()):
+		_active_safe_room_ids.append(eligible_rooms[index])
+	for room_id in _safe_room_lights:
+		(_safe_room_lights[room_id] as OmniLight3D).queue_free()
+	_safe_room_lights.clear()
+	for room_id in _active_safe_room_ids:
+		var floor_node := _room_floor_for_id(room_id)
+		if floor_node == null or floor_node.mesh == null:
+			continue
+		var bounds: AABB = floor_node.global_transform * floor_node.mesh.get_aabb()
+		var safe_light := OmniLight3D.new()
+		safe_light.name = "ActiveSafeRoomLight_" + String(room_id)
+		safe_light.light_color = Color(1.0, 0.78, 0.46)
+		safe_light.light_energy = 2.2
+		safe_light.omni_range = maxf(bounds.size.x, bounds.size.z) * 0.75 + 3.0
+		safe_light.shadow_enabled = false
+		safe_light.position = school.to_local(Vector3(bounds.position.x + bounds.size.x * 0.5, bounds.end.y + 2.0, bounds.position.z + bounds.size.z * 0.5))
+		school.add_child(safe_light)
+		_safe_room_lights[room_id] = safe_light
+	print("Bell preview active safe rooms (%d): %s" % [_active_safe_room_ids.size(), ", ".join(PackedStringArray(_active_safe_room_ids.map(func(id: StringName) -> String: return String(id))))])
+
+func _room_floor_for_id(room_id: StringName) -> MeshInstance3D:
+	for floor_node in get_tree().get_nodes_in_group("preview_safe_room_floors"):
+		if floor_node.get_meta("preview_room_id", &"") == room_id:
+			return floor_node as MeshInstance3D
+	return null
+
+func _door_connects_active_safe_room(link: NavigationLink3D) -> bool:
+	var start_world: Vector3 = link.global_transform * link.start_position
+	var end_world: Vector3 = link.global_transform * link.end_position
+	for room_id in _active_safe_room_ids:
+		var floor_node := _room_floor_for_id(room_id)
+		if floor_node == null:
+			continue
+		var bounds: AABB = floor_node.get_meta("preview_room_bounds")
+		if _point_is_inside_room_xz(start_world, bounds) or _point_is_inside_room_xz(end_world, bounds):
+			return true
+	return false
+
+func _point_is_inside_room_xz(point: Vector3, bounds: AABB) -> bool:
+	return point.x >= bounds.position.x and point.x <= bounds.end.x and point.z >= bounds.position.z and point.z <= bounds.end.z
+
+func _sync_safe_room_door_links() -> void:
+	for door_id in _door_navigation_links:
+		var link: NavigationLink3D = _door_navigation_links[door_id]
+		var door: Node3D
+		for candidate in get_tree().get_nodes_in_group("preview_school_doors"):
+			if candidate.get("door_id") == door_id:
+				door = candidate as Node3D
+				break
+		link.enabled = is_instance_valid(door) and door.get("_opened") and not _door_connects_active_safe_room(link)
 
 func _refresh_monster_navigation_after_door_open() -> void:
 	await get_tree().physics_frame
@@ -507,7 +723,17 @@ func _apply_bell_debug_state() -> void:
     preview_environment.environment.background_color = BELL_BACKGROUND if _bell_debug_active else NORMAL_BACKGROUND
     preview_environment.environment.ambient_light_color = BELL_AMBIENT if _bell_debug_active else NORMAL_AMBIENT
     preview_light.light_color = Color(1.0, 0.12, 0.16) if _bell_debug_active else Color.WHITE
-    bell_status.text = "BELL DEBUG: ON (Z)" if _bell_debug_active else "BELL DEBUG: OFF (Z)"
+	if _bell_debug_active:
+		_choose_preview_safe_rooms()
+		bell_status.text = "BELL DEBUG: ON (Z) | SAFE: %s" % ", ".join(PackedStringArray(_active_safe_room_ids.map(func(id: StringName) -> String: return String(id))))
+	else:
+		_active_safe_room_ids.clear()
+		for safe_light in _safe_room_lights.values():
+			(safe_light as OmniLight3D).queue_free()
+		_safe_room_lights.clear()
+		bell_status.text = "BELL DEBUG: OFF (Z)"
+	_sync_safe_room_door_links()
+	monster.set_safe_rooms(_active_safe_room_ids)
     monster.call("set_preview_bell_active", _bell_debug_active)
 
 func _find_room_floor(node: Node, room_name: String) -> MeshInstance3D:
