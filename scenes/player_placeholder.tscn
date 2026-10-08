@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scenes/player_placeholder.gd" id="1_controller"]
+[ext_resource type="PackedScene" path="res://scenes/player_stamina_hud.tscn" id="2_stamina_hud"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.3
@@ -60,3 +61,5 @@ theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
 theme_override_constants/outline_size = 4
 text = "E - Interact"
 horizontal_alignment = 1
+
+[node name="StaminaHUD" parent="." instance=ExtResource("2_stamina_hud")]

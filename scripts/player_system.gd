@@ -2,6 +2,8 @@ extends CharacterBody3D
 class_name PlayerSystem
 
 signal interaction_requested(target_id: StringName)
+# Player-internal presentation event; not a shared School/Monster contract.
+signal stamina_state_changed(current: float, capacity: float, exhausted: bool)
 
 # Temporary tuning only: exact stamina values/policy remain OPEN in GAME_SPEC.md.
 @export_group("Provisional Stamina")
@@ -20,14 +22,26 @@ var movement_state: StringName:
 	get:
 		return _movement_state
 
+var stamina_current: float:
+	get:
+		return _stamina
+
+var stamina_exhausted: bool:
+	get:
+		return _stamina_exhausted
+
 var _movement_state: StringName = &"idle"
 var _stamina: float = 0.0
 var _stamina_exhausted: bool = false
 var _stamina_regeneration_delay_remaining: float = 0.0
+var _published_stamina: float = -1.0
+var _published_stamina_capacity: float = -1.0
+var _published_stamina_exhausted: bool = false
 
 
 func _ready() -> void:
 	_stamina = stamina_capacity
+	_publish_stamina_state()
 
 
 func _can_sprint(has_directional_input: bool) -> bool:
@@ -43,6 +57,7 @@ func _update_stamina(delta: float) -> void:
 		if is_zero_approx(_stamina):
 			_stamina = 0.0
 			_stamina_exhausted = true
+		_publish_stamina_state()
 		return
 
 	# Provisional policy: recover while walking/idle, even with Shift held.
@@ -53,6 +68,17 @@ func _update_stamina(delta: float) -> void:
 	_stamina = minf(stamina_capacity, _stamina + stamina_regeneration_rate * regeneration_delta)
 	if _stamina_exhausted and _stamina >= stamina_capacity * stamina_recovery_fraction:
 		_stamina_exhausted = false
+	_publish_stamina_state()
+
+
+func _publish_stamina_state() -> void:
+	if (_published_stamina == _stamina and _published_stamina_capacity == stamina_capacity
+			and _published_stamina_exhausted == _stamina_exhausted):
+		return
+	_published_stamina = _stamina
+	_published_stamina_capacity = stamina_capacity
+	_published_stamina_exhausted = _stamina_exhausted
+	stamina_state_changed.emit(_stamina, stamina_capacity, _stamina_exhausted)
 
 
 func get_world_position() -> Vector3:

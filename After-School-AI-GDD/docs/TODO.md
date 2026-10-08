@@ -22,6 +22,7 @@ Items marked **DECISION** require human/team agreement before they can be made f
 
 - [ ] **Zion:** six specified item placements and objective progression.
 - [ ] **Rhaiyn:** top-left minimap, objective display, item markers; no monster marker/data.
+- [x] **Rhaiyn:** stamina-only Player HUD with current/capacity bar/text and exhaustion/recovery feedback (2026-10-08); 28 HUD checks passed headless and natively, plus 45 Player regression checks. Visuals remain provisional; this does not complete minimap/objective/Bell UI or joint School integration.
 - [ ] **Zion/team DECISION:** finalize checkpoint fields, key treatment, restore Bell phase/timer, and monster reset behavior.
 - [ ] **Zion/Rhaiyn:** save latest item checkpoint; capture → jumpscare → restore world/player in a single guarded flow.
 - [ ] **Zion:** final exit gated until all belongings complete.
