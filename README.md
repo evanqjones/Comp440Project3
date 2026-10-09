@@ -1,6 +1,8 @@
 # Comp440Project3
 Horror game
 
+https://evanqjones.github.io/Comp440Project3/
+
 ## Web build
 
 The project is prepared for GitHub Pages deployment. See [GITHUB_PAGES.md](GITHUB_PAGES.md) for the one-time Pages setting and publishing steps. The Web export runs automatically after commits reach `main`.
