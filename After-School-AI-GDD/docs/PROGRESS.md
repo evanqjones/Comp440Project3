@@ -180,3 +180,23 @@
 - **Artroom Brush chase visibility fix (2026-10-08):** When the floor spotlight detects the player, the monster is now made visible, set upright at floor height, and its physics processing is re-enabled before it chases. Headless scene load has no script errors; verify the chase visually in game.
 
 - **Library maze restored to Godot export (2026-10-08):** Re-exported the current school contents from assets.blend and included all seven Library Maze Wall panels in assets/school_blockout.glb. Godot reimport completed; the headless preview loads and initializes doors/navigation without script errors.
+
+## Final key Bell escape sequence (2026-10-09)
+
+- Final-key pickup now places the monster at the farthest valid navigation point in the Storage Closet before activating permanent Bell chase. The player prompt directs them to run to the entrance; Bell lighting starts without temporary safe-room lights.
+- Fixed the pickup crash: the monster safe-room API requires a typed Array[StringName], so the final transition now passes a typed empty array.
+- Verification: a headless repro collected the key and confirmed BELL_CHASE, visible monster, and monster spawn inside the key room. Interactive route to the entrance still needs a gameplay check.
+
+## Final Bell suspense chase (2026-10-09)
+
+- After final-key pickup, the monster waits 5 seconds before moving. It then pathfinds to a point 3.5 m behind the moving player; when the player stops, it targets the player's position and closes in. Delay, trailing distance, and movement threshold are provisional exported Monster settings.
+- Verification: headless scene repro collected the final key, confirmed Bell state, observed about 4 seconds remaining after 1 second, then confirmed the monster closed to the stationary player after the delay. Moving-player trailing distance needs an interactive play check.
+
+## Final key entrance door sequence (2026-10-09)
+
+- Final-key pickup opens the Lobby entrance door nearest the Outside floor. When the player crosses through and clears the entrance into the exterior bounds, the door locks and slams shut behind them.
+- Verification: headless repro confirmed Lobby - 23 opens, the outside crossing triggers the slam, and the door ends closed and locked. The in-game timing of the monster relative to the doorway needs a visual play check.
+
+- Final-key exit door check (2026-10-09): Confirmed the Lobby - 23 entrance opens toward the Lobby on key activation, stays open during the escape, and slams and locks after the player reaches outside.
+
+- **Final-key entrance target correction (2026-10-09):** The escape door is the Lobby's south/front entrance (Lobby - 22), not its west doorway to the outside area (Lobby - 23). It opens when the key is collected and slams/locks only after the player crosses outward through the entrance. Headless check confirmed selection and crossing detection.

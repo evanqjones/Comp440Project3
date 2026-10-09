@@ -24,6 +24,10 @@ extends CharacterBody3D
 @export_range(0.5, 15.0, 0.5) var preview_snack_sight_half_width: float = 6.0
 @export_range(0.1, 2.0, 0.05) var preview_ruler_hall_speed: float = 1.1
 @export_range(1.0, 20.0, 0.5) var preview_ruler_spotlight_chase_speed: float = 8.0
+@export_group("Provisional Final Bell Chase")
+@export_range(0.0, 15.0, 0.25) var preview_final_bell_start_delay: float = 5.0
+@export_range(1.0, 8.0, 0.25) var preview_final_bell_follow_distance: float = 3.5
+@export_range(0.05, 1.0, 0.05) var preview_final_bell_moving_threshold: float = 0.2
 @export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
 @export_range(5.0, 90.0, 1.0) var preview_science_turn_speed_degrees: float = 18.0
 
@@ -43,6 +47,8 @@ var _patrol_active := false
 var _player_target: Node3D
 var _lost_sight_time := 0.0
 var _preview_bell_active := false
+var _preview_final_bell_tail_chase := false
+var _preview_final_bell_delay_remaining := 0.0
 var _bell_path_refresh := 0.0
 var _last_bell_target_position := Vector3.ZERO
 var _has_bell_target := false
@@ -864,6 +870,9 @@ func set_preview_bell_active(active: bool) -> void:
     if _preview_bell_active == active:
         return
     _preview_bell_active = active
+    if not active:
+        _preview_final_bell_tail_chase = false
+        _preview_final_bell_delay_remaining = 0.0
     if active:
         if _preview_book_sink_active:
             if is_instance_valid(_preview_book_sink_tween):
@@ -881,6 +890,14 @@ func set_preview_bell_active(active: bool) -> void:
     _bell_path_refresh = 0.0
     _has_bell_target = false
     _set_state(&"BELL_CHASE" if active else &"PATROL")
+
+func begin_preview_final_bell_chase() -> void:
+    _preview_final_bell_tail_chase = true
+    _preview_final_bell_delay_remaining = preview_final_bell_start_delay
+    _bell_path_refresh = 0.0
+    _has_bell_target = false
+    set_preview_bell_active(true)
+    _set_state(&"BELL_CHASE")
 
 func _physics_process(delta: float) -> void:
     if _preview_bell_active:
@@ -1037,6 +1054,18 @@ func _update_bell_chase() -> void:
         velocity = Vector3.ZERO
         move_and_slide()
         return
+    if _preview_final_bell_tail_chase and _preview_final_bell_delay_remaining > 0.0:
+        _preview_final_bell_delay_remaining = maxf(
+            0.0,
+            _preview_final_bell_delay_remaining - get_physics_process_delta_time()
+        )
+        velocity = Vector3.ZERO
+        move_and_slide()
+        var toward_player := _player_target.global_position - global_position
+        toward_player.y = 0.0
+        if toward_player.length_squared() > 0.001:
+            look_at(global_position + toward_player, Vector3.UP)
+        return
 
     var safe_room_id := _preview_safe_room_at(_player_target.global_position)
     if safe_room_id != &"":
@@ -1044,19 +1073,24 @@ func _update_bell_chase() -> void:
         return
     _bell_lurk_room_id = &""
     _navigation_agent.target_desired_distance = 0.5
+    var chase_target := _player_target.global_position
+    if _preview_final_bell_tail_chase and _player_target is CharacterBody3D:
+        var player_velocity := (_player_target as CharacterBody3D).get_real_velocity()
+        player_velocity.y = 0.0
+        if player_velocity.length() > preview_final_bell_moving_threshold:
+            chase_target -= player_velocity.normalized() * preview_final_bell_follow_distance
 
     _bell_path_refresh -= get_physics_process_delta_time()
     if _bell_path_refresh <= 0.0:
-        var target_position := _player_target.global_position
-        if not _has_bell_target or _last_bell_target_position.distance_to(target_position) > 0.4:
-            _navigation_agent.target_position = target_position
-            _last_bell_target_position = target_position
+        if not _has_bell_target or _last_bell_target_position.distance_to(chase_target) > 0.4:
+            _navigation_agent.target_position = chase_target
+            _last_bell_target_position = chase_target
             _has_bell_target = true
         _bell_path_refresh = 0.2
 
-    var to_player := _player_target.global_position - global_position
-    to_player.y = 0.0
-    if to_player.length() <= _navigation_agent.target_desired_distance:
+    var to_target := chase_target - global_position
+    to_target.y = 0.0
+    if to_target.length() <= _navigation_agent.target_desired_distance:
         velocity = Vector3.ZERO
         move_and_slide()
         _update_squeeze(Vector3.ZERO, get_physics_process_delta_time())

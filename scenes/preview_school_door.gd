@@ -50,6 +50,14 @@ func _physics_process(_delta: float) -> void:
 func set_interaction_locked(locked: bool) -> void:
 	interaction_locked = locked
 
+func open_for_escape(opening_side: Vector3 = Vector3.ZERO) -> void:
+	interaction_locked = false
+	if _opened or _is_animating or _panels.is_empty():
+		return
+	if opening_side.length_squared() < 0.001 and is_instance_valid(_player):
+		opening_side = _player.global_position - global_position
+	_open_door(opening_side)
+
 func set_one_way_from_world_side(allowed_side: Vector3) -> void:
 	allowed_side.y = 0.0
 	if allowed_side.length_squared() < 0.001:
