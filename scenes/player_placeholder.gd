@@ -48,7 +48,7 @@ func _ready() -> void:
     $CameraPivot/SpringArm3D.spring_length = camera_distance
     player_camera.current = true
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-    capture_status.visible = _capture_presentation_active
+    capture_status.visible = bool(get("capture_presentation_active"))
     stamina_state_changed.connect(stamina_hud.update_stamina)
     stamina_hud.update_stamina(stamina_current, stamina_capacity, stamina_exhausted)
 
@@ -140,11 +140,20 @@ func set_input_enabled(enabled: bool) -> void:
             interaction_prompt.hide()
 
 func play_capture_and_respawn(checkpoint_id: StringName) -> void:
-    if _capture_presentation_active:
+    if bool(get("capture_presentation_active")):
         return
     super.play_capture_and_respawn(checkpoint_id)
     if is_instance_valid(capture_status):
-        capture_status.visible = _capture_presentation_active
+        capture_status.visible = bool(get("capture_presentation_active"))
+
+func restore_after_capture(world_position: Vector3, checkpoint_id: StringName) -> void:
+    super.restore_after_capture(world_position, checkpoint_id)
+    _pending_interaction_target_id = &""
+    _interaction_target_id = &""
+    if is_instance_valid(capture_status):
+        capture_status.hide()
+    if is_instance_valid(interaction_prompt):
+        interaction_prompt.hide()
 
 func _update_interaction_target() -> void:
     _interaction_target_id = &""

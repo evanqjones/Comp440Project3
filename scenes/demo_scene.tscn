@@ -1,0 +1,84 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scenes/demo_scene.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/player_placeholder.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/monster_placeholder.tscn" id="3_monster"]
+[ext_resource type="PackedScene" path="res://scenes/school_bell.tscn" id="4_bell"]
+
+[sub_resource type="Environment" id="Environment_preview"]
+background_mode = 1
+background_color = Color(0.012, 0.022, 0.065, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.13, 0.17, 0.29, 1)
+ambient_light_energy = 0.42
+
+[node name="DemoScene" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="School" type="Node3D" parent="."]
+
+[node name="PlayerPlaceholder" parent="." instance=ExtResource("2_player")]
+scale = Vector3(0.8, 0.8, 0.8)
+camera_distance = 3.5
+
+[node name="MonsterPlaceholder" parent="." instance=ExtResource("3_monster")]
+
+[node name="SchoolBell" parent="." instance=ExtResource("4_bell")]
+minimum_interval = 30.0
+maximum_interval = 60.0
+bell_duration = 12.0
+auto_start = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_preview")
+
+[node name="PreviewLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-48, -25, 0)
+light_color = Color(0.23, 0.34, 0.68, 1)
+light_energy = 0.32
+shadow_enabled = true
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+
+[node name="BellStatus" type="Label" parent="DebugOverlay"]
+visible = false
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 400.0
+offset_bottom = 48.0
+text = "BELL QUIET | Automatic schedule"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+
+[node name="SpawnHelp" type="Label" parent="DebugOverlay"]
+visible = false
+offset_left = 20.0
+offset_top = 52.0
+offset_right = 700.0
+offset_bottom = 80.0
+text = "M: toggle green spawn panels   X: offscreen relocation (Bell blocks it)"
+theme_override_colors/font_color = Color(0.45, 1, 0.45, 1)
+
+[node name="ItemHelp" type="Label" parent="DebugOverlay"]
+offset_left = 20.0
+offset_top = 82.0
+offset_right = 1100.0
+offset_bottom = 112.0
+text = "Item circles: E to collect when close"
+theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
+
+[node name="ControlsHint" type="Label" parent="DebugOverlay"]
+anchors_preset = 1
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -220.0
+offset_right = 350.0
+offset_bottom = -132.0
+grow_vertical = 0
+text = "CTRL  Sneak (quiet)\nSHIFT  Sprint (loud)\nAvoid the monster's eyes!"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 18

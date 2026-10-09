@@ -15,6 +15,8 @@ Own player locomotion, stamina, horizontal third-person camera, interaction requ
 7. On capture request, disable player control, show jumpscare, then wait for School checkpoint restoration before repositioning/re-enabling control. Prevent duplicate deaths during presentation/reset.
 8. Resume at most recent collected-item checkpoint. If no belongings collected, fallback is Nurse Office; key persistence at this stage is open.
 
+The integrated Demo Scene currently keeps its checkpoint positions in memory for its preview capture flow: regular capture returns to the latest collected item, while final-chase capture resets to the chase start. Production checkpoint restoration still needs School's canonical world snapshot and should use `restore_after_capture(world_position, checkpoint_id)` only after the checkpoint has been resolved.
+
 ## Integration expectations
 
 - Consume objective/item marker/Bell/checkpoint events from School and capture requests from Monster.
