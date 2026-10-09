@@ -24,6 +24,8 @@ extends CharacterBody3D
 @export_range(0.5, 15.0, 0.5) var preview_snack_sight_half_width: float = 6.0
 @export_range(0.1, 2.0, 0.05) var preview_ruler_hall_speed: float = 1.1
 @export_range(1.0, 20.0, 0.5) var preview_ruler_spotlight_chase_speed: float = 8.0
+@export_group("Provisional Bell Chase")
+@export_range(0.0, 15.0, 0.25) var preview_bell_start_delay: float = 3.0
 @export_group("Provisional Final Bell Chase")
 @export_range(0.0, 15.0, 0.25) var preview_final_bell_start_delay: float = 5.0
 @export_range(1.0, 8.0, 0.25) var preview_final_bell_follow_distance: float = 3.5
@@ -891,6 +893,14 @@ func set_preview_bell_active(active: bool) -> void:
     _has_bell_target = false
     _set_state(&"BELL_CHASE" if active else &"PATROL")
 
+func begin_preview_bell_phase_chase() -> void:
+    _preview_final_bell_tail_chase = false
+    _preview_final_bell_delay_remaining = preview_bell_start_delay
+    _bell_path_refresh = 0.0
+    _has_bell_target = false
+    set_preview_bell_active(true)
+    _set_state(&"BELL_CHASE")
+
 func begin_preview_final_bell_chase() -> void:
     _preview_final_bell_tail_chase = true
     _preview_final_bell_delay_remaining = preview_final_bell_start_delay
@@ -1054,7 +1064,7 @@ func _update_bell_chase() -> void:
         velocity = Vector3.ZERO
         move_and_slide()
         return
-    if _preview_final_bell_tail_chase and _preview_final_bell_delay_remaining > 0.0:
+    if _preview_final_bell_delay_remaining > 0.0:
         _preview_final_bell_delay_remaining = maxf(
             0.0,
             _preview_final_bell_delay_remaining - get_physics_process_delta_time()

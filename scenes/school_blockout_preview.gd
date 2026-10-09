@@ -103,6 +103,7 @@ var _collected_preview_items: Dictionary = {}
 var _item_room_bounds: Dictionary = {}
 var _active_preview_encounter: StringName = &""
 var _final_bell_started := false
+var _bell_hall_spawn_pending := false
 var _final_exit_door: Node3D
 var _final_exit_door_slammed := false
 var _science_encounter_started := false
@@ -174,6 +175,8 @@ func _process(delta: float) -> void:
 	_update_ruler_hall_event(delta)
 	_try_science_room_encounter_spawn()
 	_try_science_window_stalk_spawn()
+	if _bell_hall_spawn_pending and _bell_debug_active and not _final_bell_started:
+		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
 	_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
 	_update_item_minimap_player_dot()
@@ -791,15 +794,6 @@ func _start_final_key_bell() -> void:
 		_final_exit_door.call("open_for_escape", opening_side)
 	else:
 		push_warning("Final key collected, but the entrance door could not be found.")
-	var key_room_bounds: AABB = _item_room_bounds.get(&"storage_closet", AABB())
-	if key_room_bounds.size != Vector3.ZERO:
-		var spawn := _final_key_monster_spawn(key_room_bounds)
-		monster.global_position = spawn
-		monster.velocity = Vector3.ZERO
-		monster.visible = true
-		monster.collision_layer = 2
-		monster.collision_mask = 1
-		monster.set_physics_process(true)
 	_final_bell_started = true
 	_bell_debug_active = true
 	preview_environment.environment.background_color = BELL_BACKGROUND
@@ -812,9 +806,42 @@ func _start_final_key_bell() -> void:
 	_sync_safe_room_door_links()
 	var no_safe_rooms: Array[StringName] = []
 	monster.set_safe_rooms(no_safe_rooms)
+	_bell_hall_spawn_pending = false
+	var key_room_bounds: AABB = _item_room_bounds.get(&"storage_closet", AABB())
+	if key_room_bounds.size != Vector3.ZERO:
+		monster.global_position = _final_key_monster_spawn(key_room_bounds)
+		monster.velocity = Vector3.ZERO
+		monster.visible = true
+		monster.collision_layer = 2
+		monster.collision_mask = 1
+		monster.set_physics_process(true)
 	monster.call("begin_preview_final_bell_chase")
 	bell_status.text = "FINAL BELL: ON | Escape to the entrance"
-	item_help.text = "Front Door Key collected | The monster is in the Storage Closet | 5 seconds, then run to the entrance"
+	item_help.text = "Front Door Key collected | The monster enters from the Storage Closet | 5 seconds, then run to the entrance"
+
+func _final_key_monster_spawn(room_bounds: AABB) -> Vector3:
+	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
+	var player_position := player.global_position
+	var best_position := Vector3(
+		room_bounds.position.x + room_bounds.size.x * 0.2,
+		room_bounds.end.y,
+		room_bounds.position.z + room_bounds.size.z * 0.2
+	)
+	var best_distance := -INF
+	for fraction in [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.2, 0.8), Vector2(0.8, 0.8)]:
+		var desired := Vector3(
+			lerpf(room_bounds.position.x, room_bounds.end.x, fraction.x),
+			room_bounds.end.y,
+			lerpf(room_bounds.position.z, room_bounds.end.z, fraction.y)
+		)
+		var snapped: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired)
+		if snapped.distance_to(desired) > 1.5 or not _point_inside_room(snapped, room_bounds):
+			continue
+		var distance := Vector2(snapped.x - player_position.x, snapped.z - player_position.z).length_squared()
+		if distance > best_distance:
+			best_distance = distance
+			best_position = snapped
+	return best_position
 
 func _find_school_entrance_door() -> Node3D:
 	var lobby_floor := _find_room_floor(school, "lobby floor")
@@ -850,30 +877,6 @@ func _player_has_cleared_school_entrance() -> bool:
 	var player_offset := player.global_position - _final_exit_door.global_position
 	player_offset.y = 0.0
 	return player_offset.dot(entrance_direction.normalized()) > 1.0
-
-func _final_key_monster_spawn(room_bounds: AABB) -> Vector3:
-	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
-	var player_position := player.global_position
-	var best_position := Vector3(
-		room_bounds.position.x + room_bounds.size.x * 0.2,
-		room_bounds.end.y,
-		room_bounds.position.z + room_bounds.size.z * 0.2
-	)
-	var best_distance := -INF
-	for fraction in [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.2, 0.8), Vector2(0.8, 0.8)]:
-		var desired := Vector3(
-			lerpf(room_bounds.position.x, room_bounds.end.x, fraction.x),
-			room_bounds.end.y,
-			lerpf(room_bounds.position.z, room_bounds.end.z, fraction.y)
-		)
-		var snapped: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired)
-		if snapped.distance_to(desired) > 1.5 or not _point_inside_room(snapped, room_bounds):
-			continue
-		var distance := Vector2(snapped.x - player_position.x, snapped.z - player_position.z).length_squared()
-		if distance > best_distance:
-			best_distance = distance
-			best_position = snapped
-	return best_position
 
 func _finish_microphone_escape() -> void:
 	var exit_door := _find_auditorium_exit_door()
@@ -1801,6 +1804,22 @@ func _is_hallway_spawn(marker: Node3D) -> bool:
 	var spawn_kind := String(marker.get_meta("spawn_kind", ""))
 	return spawn_kind in ["Beyond hallway corner", "T-intersection", "Far end of hall", "Behind lockers (hall side)", "Behind camera hallway"]
 
+func _start_bell_chase_from_hallway() -> bool:
+	var hallway_candidates: Array[Node3D] = []
+	for marker in _spawn_markers:
+		if _is_hallway_spawn(marker):
+			hallway_candidates.append(marker)
+	if _camera_hallway_spawn_valid and is_instance_valid(_camera_hallway_spawn):
+		hallway_candidates.append(_camera_hallway_spawn)
+	hallway_candidates.shuffle()
+	for marker in hallway_candidates:
+		if not monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
+			continue
+		monster.call("begin_preview_bell_phase_chase")
+		print("Monster spawned in hallway for Bell chase: %s" % marker.get_meta("spawn_id", marker.name))
+		return true
+	return false
+
 func _update_follow_camera_hallway_spawn() -> bool:
 	if not is_instance_valid(_camera_hallway_spawn) or not is_instance_valid(player.player_camera):
 		return false
@@ -1920,6 +1939,7 @@ func _apply_bell_debug_state() -> void:
 		_choose_preview_safe_rooms()
 		bell_status.text = "BELL DEBUG: ON (Z) | SAFE: %s" % ", ".join(PackedStringArray(_active_safe_room_ids.map(func(id: StringName) -> String: return String(id))))
 	else:
+		_bell_hall_spawn_pending = false
 		_active_safe_room_ids.clear()
 		for safe_light in _safe_room_lights.values():
 			(safe_light as OmniLight3D).queue_free()
@@ -1927,7 +1947,10 @@ func _apply_bell_debug_state() -> void:
 		bell_status.text = "BELL DEBUG: OFF (Z)"
 	_sync_safe_room_door_links()
 	monster.set_safe_rooms(_active_safe_room_ids)
-	monster.call("set_preview_bell_active", _bell_debug_active)
+	if _bell_debug_active:
+		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
+	else:
+		monster.call("set_preview_bell_active", false)
 
 func _find_room_floor(node: Node, room_name: String) -> MeshInstance3D:
 	if node is MeshInstance3D and node.name.to_lower().contains(room_name):
