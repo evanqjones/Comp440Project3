@@ -354,3 +354,8 @@ This log records the school-model and Godot-preview work completed with the user
 - CI now clears stale import caches, disables Blender imports in its checkout, and checks the finished PCK in an isolated project before deployment.
 - Fresh local Web export check loaded 477 meshes, 24 floors, 2 roofs/ceilings, 48 fluorescent fixtures, and 21 glass panes. The check rejects the previously deployed incomplete package.
 - Re-export school_web.glb with export_school_web.py after Blender edits. Browser gameplay still needs checking after deployment.
+
+
+## 2026-10-09 - Browser-safe sneak control
+
+- Changed hold-to-sneak/crouch from Ctrl to Space to avoid the browser Ctrl+W close-tab shortcut. Updated the Demo controls hint and controls documentation.

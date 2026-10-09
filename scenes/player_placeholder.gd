@@ -83,7 +83,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
     # Keep the current capsule pose while disabled; do not stand up under cover.
     if _input_enabled:
-        _set_crouching(Input.is_physical_key_pressed(KEY_CTRL))
+        _set_crouching(Input.is_physical_key_pressed(KEY_SPACE))
     _noise_time_remaining = maxf(0.0, _noise_time_remaining - delta)
 
     var input_axis := Vector2.ZERO
