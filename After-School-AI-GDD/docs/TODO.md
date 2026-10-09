@@ -15,15 +15,16 @@ Items marked **DECISION** require human/team agreement before they can be made f
 ## Milestone 1 — Playable traversal
 
 - [ ] **Rhaiyn:** third-person walking, horizontal camera, collision-aware view.
-- [ ] **Rhaiyn:** sprint/stamina loop and input settings (after provisional/default policy set).
+- [x] **Rhaiyn:** sprint/stamina slice with exported provisional capacity/drain/regeneration/delay/recovery threshold and existing WASD/Shift controls (2026-10-07); Player parser/scene checks and 21 headless physics checks passed. A later headless run confirmed the merged school preview starts; manual stamina/crouch/noise tuning and input remapping/settings remain deferred. See Rhaiyn's `PROGRESS.md` section for provisional defaults/policy and verification details.
 - [ ] **Zion:** Nurse Office spawn, Main Office key placement, room/door data, start route traversable.
 - [ ] **Zion:** locked/open door behavior, permanent-open invariant, successful open event/noise.
-- [ ] **Rhaiyn/Zion:** interaction target and prompt wired through public request API.
+- [ ] **Rhaiyn/Zion:** Player camera targeting, minimal E prompt, and frozen `interaction_requested(target_id: StringName)` request are ready (2026-10-08; 45 headless checks passed). Zion/integration's stable production target IDs and wiring through School's public `request_interaction` API remain pending; joint task stays open.
 
 ## Milestone 2 — Items and checkpoints
 
 - [ ] **Zion:** six specified item placements and objective progression.
 - [ ] **Rhaiyn:** top-left minimap, objective display, item markers; no monster marker/data.
+- [x] **Rhaiyn:** stamina-only Player HUD with current/capacity bar/text and exhaustion/recovery feedback (2026-10-08); 28 HUD checks passed headless and natively, plus 45 Player regression checks. Visuals remain provisional; this does not complete minimap/objective/Bell UI or joint School integration.
 - [ ] **Zion/team DECISION:** finalize checkpoint fields, key treatment, restore Bell phase/timer, and monster reset behavior.
 - [ ] **Zion/Rhaiyn:** save latest item checkpoint; capture → jumpscare → restore world/player in a single guarded flow.
 - [ ] **Zion:** final exit gated until all belongings complete.

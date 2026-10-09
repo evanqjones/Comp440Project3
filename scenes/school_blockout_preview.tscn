@@ -1,7 +1,8 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scenes/school_blockout_preview.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player_placeholder.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/monster_placeholder.tscn" id="3_monster"]
 
 [sub_resource type="Environment" id="Environment_preview"]
 background_mode = 1
@@ -16,6 +17,10 @@ script = ExtResource("1_script")
 [node name="School" type="Node3D" parent="."]
 
 [node name="PlayerPlaceholder" parent="." instance=ExtResource("2_player")]
+scale = Vector3(0.8, 0.8, 0.8)
+camera_distance = 3.5
+
+[node name="MonsterPlaceholder" parent="." instance=ExtResource("3_monster")]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_preview")
@@ -23,3 +28,29 @@ environment = SubResource("Environment_preview")
 [node name="PreviewLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-48, -25, 0)
 light_energy = 1.2
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+
+[node name="BellStatus" type="Label" parent="DebugOverlay"]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 240.0
+offset_bottom = 48.0
+text = "BELL DEBUG: OFF (Z)"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+
+[node name="SpawnHelp" type="Label" parent="DebugOverlay"]
+offset_left = 20.0
+offset_top = 52.0
+offset_right = 700.0
+offset_bottom = 80.0
+text = "M: toggle green spawn panels   X: offscreen relocation (Bell blocks it)"
+theme_override_colors/font_color = Color(0.45, 1, 0.45, 1)
+
+[node name="ItemHelp" type="Label" parent="DebugOverlay"]
+offset_left = 20.0
+offset_top = 82.0
+offset_right = 1100.0
+offset_bottom = 112.0
+text = "Item circles: E to collect when close"
+theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)

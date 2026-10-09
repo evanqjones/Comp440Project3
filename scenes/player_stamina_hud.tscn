@@ -1,0 +1,37 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/player_stamina_hud.gd" id="1_hud"]
+
+[node name="PlayerStaminaHUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="Stamina" type="VBoxContainer" parent="."]
+offset_left = 20.0
+offset_top = -112.0
+offset_right = 260.0
+offset_bottom = -20.0
+anchor_top = 1.0
+anchor_bottom = 1.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="Value" type="Label" parent="Stamina"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+text = "Stamina"
+
+[node name="Bar" type="ProgressBar" parent="Stamina"]
+custom_minimum_size = Vector2(240, 18)
+layout_mode = 2
+mouse_filter = 2
+step = 0.0
+show_percentage = false
+
+[node name="Status" type="Label" parent="Stamina"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
