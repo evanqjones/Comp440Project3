@@ -10,6 +10,7 @@ extends Node3D
 @onready var bell_status: Label = $DebugOverlay/BellStatus
 @onready var spawn_help: Label = $DebugOverlay/SpawnHelp
 @onready var item_help: Label = $DebugOverlay/ItemHelp
+var _character_interaction_prompt: Label3D
 
 const NORMAL_BACKGROUND := Color(0.055, 0.07, 0.1, 1.0)
 const NORMAL_AMBIENT := Color(0.55, 0.62, 0.75, 1.0)
@@ -141,6 +142,7 @@ func _ready() -> void:
 	_create_school_door_navigation_links()
 	_register_preview_room_floors()
 	_create_preview_items()
+	_create_character_interaction_prompt()
 	_create_locker_placeholders()
 	_create_window_lurk_markers()
 	_place_player_at_nurse_office()
@@ -168,6 +170,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_update_preview_item_encounter()
 	_update_locker_prompt()
+	_update_character_interaction_prompt()
 	_update_ruler_hall_event(delta)
 	_try_science_room_encounter_spawn()
 	_try_science_window_stalk_spawn()
@@ -734,19 +737,8 @@ func _library_northwest_spawn(bounds: AABB) -> Vector3:
 	return desired
 
 func _try_collect_preview_item() -> bool:
-	var nearest_item: Dictionary = {}
-	var nearest_distance := INF
-	for item in PREVIEW_ITEMS:
-		if _collected_preview_items.has(item["id"]) or not _item_markers.has(item["id"]):
-			continue
-		if not _item_room_bounds.has(item["room"]) or not _point_inside_room(player.global_position, _item_room_bounds[item["room"]]):
-			continue
-		var marker := _item_markers[item["id"]] as Node3D
-		var distance := player.global_position.distance_to(marker.global_position)
-		if distance < nearest_distance:
-			nearest_distance = distance
-			nearest_item = item
-	if nearest_item.is_empty() or nearest_distance > 1.65:
+	var nearest_item := _nearest_collectible_preview_item()
+	if nearest_item.is_empty():
 		return false
 	var item_id: StringName = nearest_item["id"]
 	_collected_preview_items[item_id] = true
@@ -1059,17 +1051,8 @@ func _try_toggle_locker_hide() -> bool:
 		_active_locker_index = -1
 		item_help.text = "You left the locker"
 		return true
-	var closest_index := -1
-	var closest_distance := INF
-	for index in _locker_spots.size():
-		var spot: Dictionary = _locker_spots[index]
-		if _ruler_hall_event_active and not bool(spot.get("hallway", false)):
-			continue
-		var distance: float = player.global_position.distance_to(spot["outside"])
-		if distance < closest_distance:
-			closest_distance = distance
-			closest_index = index
-	if closest_index < 0 or closest_distance > 1.5:
+	var closest_index := _nearest_locker_spot_index()
+	if closest_index < 0:
 		return false
 	var selected: Dictionary = _locker_spots[closest_index]
 	_player_locker_return_position = player.global_position
@@ -1096,6 +1079,66 @@ func _update_locker_prompt() -> void:
 		if player.global_position.distance_to(spot["outside"]) <= 1.5:
 			item_help.text = "Locker | E: hide"
 			return
+
+func _create_character_interaction_prompt() -> void:
+	_character_interaction_prompt = Label3D.new()
+	_character_interaction_prompt.name = "CharacterInteractionPrompt"
+	_character_interaction_prompt.visible = false
+	_character_interaction_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_character_interaction_prompt.fixed_size = true
+	_character_interaction_prompt.font_size = 32
+	_character_interaction_prompt.pixel_size = 0.005
+	_character_interaction_prompt.outline_size = 8
+	_character_interaction_prompt.outline_modulate = Color(0.015, 0.02, 0.025, 1.0)
+	_character_interaction_prompt.modulate = Color(1.0, 0.96, 0.78, 1.0)
+	_character_interaction_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_character_interaction_prompt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	add_child(_character_interaction_prompt)
+
+func _update_character_interaction_prompt() -> void:
+	if _character_interaction_prompt == null:
+		return
+	var prompt_text := ""
+	if _active_locker_index >= 0:
+		prompt_text = "Press E to leave locker"
+	else:
+		var item := _nearest_collectible_preview_item()
+		if not item.is_empty():
+			prompt_text = "Press E to collect\n%s" % item["name"]
+		elif _nearest_locker_spot_index() >= 0:
+			prompt_text = "Press E to hide"
+	_character_interaction_prompt.text = prompt_text
+	_character_interaction_prompt.visible = not prompt_text.is_empty()
+	if _character_interaction_prompt.visible:
+		_character_interaction_prompt.global_position = player.global_position + Vector3.UP * 2.05
+
+func _nearest_collectible_preview_item() -> Dictionary:
+	var nearest_item: Dictionary = {}
+	var nearest_distance := INF
+	for item in PREVIEW_ITEMS:
+		if _collected_preview_items.has(item["id"]) or not _item_markers.has(item["id"]):
+			continue
+		if not _item_room_bounds.has(item["room"]) or not _point_inside_room(player.global_position, _item_room_bounds[item["room"]]):
+			continue
+		var marker := _item_markers[item["id"]] as Node3D
+		var distance := player.global_position.distance_to(marker.global_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_item = item
+	return nearest_item if nearest_distance <= 1.65 else {}
+
+func _nearest_locker_spot_index() -> int:
+	var closest_index := -1
+	var closest_distance := INF
+	for index in _locker_spots.size():
+		var spot: Dictionary = _locker_spots[index]
+		if _ruler_hall_event_active and not bool(spot.get("hallway", false)):
+			continue
+		var distance: float = player.global_position.distance_to(spot["outside"])
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_index = index
+	return closest_index if closest_distance <= 1.5 else -1
 
 func _start_ruler_hall_event() -> void:
 	var a_bounds: AABB = _item_room_bounds.get(&"classroom_a", AABB())

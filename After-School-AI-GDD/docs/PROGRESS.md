@@ -74,6 +74,7 @@
 - **Handoff notes:** Stamina stays internal to Player; movement noise uses a typed Player signal without per-frame spam. Crouching is quiet. Player interaction only emits the frozen request signal; School owns validation and all door/item/progression effects, including exactly one success noise event. Minimap never contains monster data. Only a minimal interaction prompt was added; no full HUD, School/Monster logic, collection, objectives, keys, exits, Bell, checkpoints, capture, audio, or project settings were changed. Pre-existing dirty Godot cache/import files were left untouched and excluded from the intended task files.
 
 - **Preview item minimap (2026-10-09):** Added a top-right school floor map to the preview with a blue player marker and yellow dots for all current preview items, including both keys. Each item dot disappears immediately when collected. Room outlines provide map context; the minimap has no monster marker or monster location data. This is preview UI and does not complete the production Player minimap/objective integration. Static review and whitespace checks only; a Godot run was not performed.
+- **Above-player interaction prompt (2026-10-09):** Added a world-space prompt above the player for nearby pickups and lockers. It prioritizes the nearest collectible item, matching E-key behavior, and switches to hiding when only a locker is in range. While hidden it prompts to leave the locker. This remains preview interaction UI; static diff and whitespace checks only, no Godot run performed.
 
 ## Integration owner — OPEN
 
