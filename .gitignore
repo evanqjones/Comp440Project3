@@ -1,0 +1,3 @@
+# Ignore new runtime artifacts (already tracked team cache files are preserved).
+.godot/
+*.log

@@ -8,15 +8,18 @@
 
 config_version=5
 
-"ï»¿config_version"=5
 
 [application]
 
 config/name="Comp440Project3"
 config/features=PackedStringArray("4.7")
-run/main_scene="res://scenes/school_system_demo.tscn"
+run/main_scene="res://scenes/after_school.tscn"
 
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+
+[filesystem]
+
+import/blender/enabled=false

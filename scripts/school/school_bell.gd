@@ -30,6 +30,7 @@ var _active: bool = false
 var _running: bool = false
 var _remaining: float = 0.0
 var _progress: int = 0
+var _final_escape: bool = false
 var _random := RandomNumberGenerator.new()
 
 
@@ -40,7 +41,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if not _running:
+	if not _running or _final_escape:
 		return
 	_remaining = maxf(0.0, _remaining - delta)
 	if _remaining > 0.0:
@@ -64,8 +65,21 @@ func start_scheduling() -> void:
 
 func stop_scheduling() -> void:
 	_running = false
+	_final_escape = false
 	_remaining = 0.0
 	_publish(false)
+
+
+func start_final_escape() -> void:
+	if _final_escape:
+		return
+	_final_escape = true
+	_running = true
+	_remaining = 0.0
+	if _active:
+		bell_state_changed.emit(get_bell_snapshot())
+	else:
+		_publish(true)
 
 
 func set_objective_progress(completed_objectives: int) -> void:
@@ -76,6 +90,7 @@ func set_objective_progress(completed_objectives: int) -> void:
 func get_bell_snapshot() -> BellSnapshot:
 	var snapshot := BellSnapshot.new()
 	snapshot.active = _active
+	snapshot.final_escape = _final_escape
 	snapshot.remaining_seconds = _remaining if _active else 0.0
 	snapshot.progression_index = _progress
 	return snapshot

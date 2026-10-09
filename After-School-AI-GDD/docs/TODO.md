@@ -39,6 +39,8 @@ Items marked **DECISION** require human/team agreement before they can be made f
 
 ## Milestone 4 — Bell chase
 
+- [x] **Zion (2026-10-09, user authorized):** integrate School scheduler, Bell audio/lighting, real pickup pressure, full-building queries and gated final exit into the existing larger team game on School_System; F5 uses the combined scene. Existing encounters preserved. See root School_System handoff for verified behavior and provisional tuning.
+
 - [x] **Zion:** isolated Bell scheduler: configurable random intervals/duration, exact-once typed state transitions, and objective-progress scaling of future intervals; automated tests and [manual steps](../../SCHOOL_BELL.md). Full Bell progression/integration below remains outstanding.
 - [ ] **Zion:** authoritative Bell state, 10-second start, +2 seconds by progression, indefinite final Bell.
 - [ ] **DECISION — Zion/team:** Bell first-trigger/cadence and progression step mapping.
