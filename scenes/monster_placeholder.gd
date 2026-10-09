@@ -22,6 +22,8 @@ extends CharacterBody3D
 @export_range(1.0, 20.0, 0.5) var preview_snack_rush_speed: float = 7.0
 @export_range(1.0, 30.0, 0.5) var preview_snack_sight_distance: float = 14.0
 @export_range(0.5, 15.0, 0.5) var preview_snack_sight_half_width: float = 6.0
+@export_group("Provisional Lab Coat Encounter")
+@export_range(3.0, 15.0, 0.5) var preview_lab_coat_sight_distance: float = 6.0
 @export_range(0.1, 2.0, 0.05) var preview_ruler_hall_speed: float = 1.1
 @export_range(1.0, 20.0, 0.5) var preview_ruler_spotlight_chase_speed: float = 8.0
 @export_group("Provisional Bell Chase")
@@ -178,6 +180,10 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
         _preview_snack_timer = randf_range(preview_snack_peek_interval_min, maxf(preview_snack_peek_interval_min, preview_snack_peek_interval_max))
         sight_distance = preview_snack_sight_distance
         sight_half_width = preview_snack_sight_half_width
+        _create_opaque_search_cone()
+    elif encounter in [&"lab_coat", &"science_classroom"]:
+        sight_distance = preview_lab_coat_sight_distance
+        sight_half_width = _base_sight_half_width
         _create_opaque_search_cone()
     else:
         sight_distance = _base_sight_distance
