@@ -94,6 +94,10 @@ var _active_safe_room_ids: Array[StringName] = []
 var _safe_room_lights: Dictionary = {}
 var _window_lurk_markers: Dictionary = {}
 var _item_markers: Dictionary = {}
+var _item_minimap_dots: Dictionary = {}
+var _item_minimap_map: Control
+var _item_minimap_player_dot: Control
+var _item_minimap_world_bounds := AABB()
 var _collected_preview_items: Dictionary = {}
 var _item_room_bounds: Dictionary = {}
 var _active_preview_encounter: StringName = &""
@@ -169,6 +173,7 @@ func _process(delta: float) -> void:
 	_try_science_window_stalk_spawn()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
 	_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
+	_update_item_minimap_player_dot()
 	var chase_active: bool = monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE"
 	if _bell_debug_active or chase_active or monster.current_state == &"INVESTIGATE" or _active_preview_encounter != &"" or monster.is_preview_weight_escape_active() or _science_window_spawn_pending or monster.is_preview_window_stalking() or monster.is_preview_window_sliding() or monster.is_preview_book_sinking():
 		_update_spawn_debug_label()
@@ -242,6 +247,154 @@ func _create_preview_items() -> void:
 		marker.add_child(label)
 		school.add_child(marker)
 		_item_markers[item["id"]] = marker
+	_create_preview_item_minimap()
+
+func _create_preview_item_minimap() -> void:
+	var floor_entries: Array[Dictionary] = []
+	var seen_floors: Dictionary = {}
+	var has_world_bounds := false
+	for room in PREVIEW_ROOM_FLOORS:
+		_add_minimap_floor_entry(String(room["floor"]), floor_entries, seen_floors, has_world_bounds)
+		if not floor_entries.is_empty():
+			has_world_bounds = true
+	for item in PREVIEW_ITEMS:
+		_add_minimap_floor_entry(String(item["floor"]), floor_entries, seen_floors, has_world_bounds)
+		if not floor_entries.is_empty():
+			has_world_bounds = true
+	if not has_world_bounds:
+		return
+
+	var overlay := Control.new()
+	overlay.name = "ItemMinimapOverlay"
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$DebugOverlay.add_child(overlay)
+
+	var panel := PanelContainer.new()
+	panel.name = "ItemMinimap"
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 0.0
+	panel.offset_left = -266.0
+	panel.offset_right = -16.0
+	panel.offset_top = 16.0
+	panel.offset_bottom = 270.0
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.025, 0.035, 0.05, 0.9)
+	panel_style.border_color = Color(0.38, 0.44, 0.52, 0.85)
+	panel_style.set_border_width_all(1)
+	panel_style.set_corner_radius_all(7)
+	panel_style.set_content_margin_all(8.0)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	overlay.add_child(panel)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 4)
+	panel.add_child(layout)
+	var title := Label.new()
+	title.text = "ITEM LOCATIONS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", Color(0.88, 0.92, 0.98))
+	title.add_theme_font_size_override("font_size", 14)
+	layout.add_child(title)
+
+	_item_minimap_map = Control.new()
+	_item_minimap_map.name = "SchoolMap"
+	_item_minimap_map.custom_minimum_size = Vector2(232.0, 194.0)
+	_item_minimap_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_item_minimap_map.clip_contents = true
+	layout.add_child(_item_minimap_map)
+	for floor_entry in floor_entries:
+		var floor_bounds: AABB = floor_entry["bounds"]
+		var room_shape := Panel.new()
+		room_shape.name = "RoomShape_%s" % String(floor_entry["name"]).replace(" ", "_")
+		room_shape.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var room_style := StyleBoxFlat.new()
+		room_style.bg_color = Color(0.36, 0.43, 0.53, 0.48)
+		room_style.border_color = Color(0.58, 0.66, 0.78, 0.72)
+		room_style.set_border_width_all(1)
+		room_style.set_corner_radius_all(2)
+		room_shape.add_theme_stylebox_override("panel", room_style)
+		_item_minimap_map.add_child(room_shape)
+		var room_top_left := _item_minimap_position(Vector3(floor_bounds.position.x, 0.0, floor_bounds.position.z))
+		var room_bottom_right := _item_minimap_position(Vector3(floor_bounds.end.x, 0.0, floor_bounds.end.z))
+		room_shape.position = room_top_left
+		room_shape.size = room_bottom_right - room_top_left
+
+	for item in PREVIEW_ITEMS:
+		var marker := _item_markers.get(item["id"]) as Node3D
+		if marker == null:
+			continue
+		var dot := Panel.new()
+		dot.name = "ItemDot_%s" % String(item["id"])
+		dot.custom_minimum_size = Vector2(10.0, 10.0)
+		dot.size = dot.custom_minimum_size
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var dot_style := StyleBoxFlat.new()
+		dot_style.bg_color = Color(1.0, 0.78, 0.12, 1.0)
+		dot_style.border_color = Color(0.16, 0.12, 0.03, 1.0)
+		dot_style.set_border_width_all(1)
+		dot_style.set_corner_radius_all(5)
+		dot.add_theme_stylebox_override("panel", dot_style)
+		_item_minimap_map.add_child(dot)
+		dot.position = _item_minimap_position(marker.global_position) - dot.size * 0.5
+		dot.visible = not _collected_preview_items.has(item["id"])
+		_item_minimap_dots[item["id"]] = dot
+
+	_item_minimap_player_dot = Panel.new()
+	_item_minimap_player_dot.name = "PlayerDot"
+	_item_minimap_player_dot.custom_minimum_size = Vector2(9.0, 9.0)
+	_item_minimap_player_dot.size = _item_minimap_player_dot.custom_minimum_size
+	_item_minimap_player_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var player_dot_style := StyleBoxFlat.new()
+	player_dot_style.bg_color = Color(0.22, 0.78, 1.0, 1.0)
+	player_dot_style.border_color = Color(0.04, 0.14, 0.2, 1.0)
+	player_dot_style.set_border_width_all(1)
+	player_dot_style.set_corner_radius_all(5)
+	_item_minimap_player_dot.add_theme_stylebox_override("panel", player_dot_style)
+	_item_minimap_map.add_child(_item_minimap_player_dot)
+	_update_item_minimap_player_dot()
+
+	var legend := Label.new()
+	legend.text = "Blue: you    Yellow: uncollected items"
+	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	legend.add_theme_color_override("font_color", Color(0.92, 0.92, 0.92))
+	legend.add_theme_font_size_override("font_size", 10)
+	layout.add_child(legend)
+
+func _add_minimap_floor_entry(floor_name: String, entries: Array[Dictionary], seen: Dictionary, has_bounds: bool) -> void:
+	var floor_node := _find_room_floor(school, floor_name)
+	if floor_node == null or floor_node.mesh == null or seen.has(floor_node.get_instance_id()):
+		return
+	var bounds: AABB = floor_node.global_transform * floor_node.mesh.get_aabb()
+	seen[floor_node.get_instance_id()] = true
+	entries.append({"name": floor_name, "bounds": bounds})
+	if not has_bounds:
+		_item_minimap_world_bounds = bounds
+	else:
+		_item_minimap_world_bounds = _item_minimap_world_bounds.merge(bounds)
+
+func _item_minimap_position(world_position: Vector3) -> Vector2:
+	if _item_minimap_map == null or _item_minimap_world_bounds.size.x <= 0.0 or _item_minimap_world_bounds.size.z <= 0.0:
+		return Vector2.ZERO
+	var map_size := _item_minimap_map.custom_minimum_size
+	var inset := Vector2(8.0, 8.0)
+	var available := map_size - inset * 2.0
+	var scale_factor := minf(available.x / _item_minimap_world_bounds.size.x, available.y / _item_minimap_world_bounds.size.z)
+	var displayed_size := Vector2(_item_minimap_world_bounds.size.x, _item_minimap_world_bounds.size.z) * scale_factor
+	var origin := (map_size - displayed_size) * 0.5
+	return origin + Vector2(world_position.x - _item_minimap_world_bounds.position.x, world_position.z - _item_minimap_world_bounds.position.z) * scale_factor
+
+func _hide_item_minimap_dot(item_id: StringName) -> void:
+	var dot := _item_minimap_dots.get(item_id) as Control
+	if dot != null:
+		dot.visible = false
+
+func _update_item_minimap_player_dot() -> void:
+	if _item_minimap_player_dot == null or player == null or _item_minimap_map == null:
+		return
+	_item_minimap_player_dot.position = _item_minimap_position(player.global_position) - _item_minimap_player_dot.size * 0.5
 
 func _preview_item_color(item_id: StringName) -> Color:
 	match item_id:
@@ -597,6 +750,7 @@ func _try_collect_preview_item() -> bool:
 		return false
 	var item_id: StringName = nearest_item["id"]
 	_collected_preview_items[item_id] = true
+	_hide_item_minimap_dot(item_id)
 	(_item_markers[item_id] as Node3D).visible = false
 	player.noise_emitted.emit(NoiseEvent.new(player.global_position, NoiseEvent.NoiseLevel.LOUD, item_id))
 	monster.on_preview_item_collected(item_id)
