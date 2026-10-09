@@ -345,3 +345,12 @@ This log records the school-model and Godot-preview work completed with the user
 - Demo Scene monster capture and respawn (2026-10-09): Added proximity-based monster capture handling. Players return to the position where they collected the most recent item, with a brief capture display and re-entry grace period. Capture during an active scheduled Bell ends that Bell and starts a fresh quiet interval. Capture during the final-key chase restores the player and monster to their positions when that chase began, then restarts the final chase delay. No gameplay verification was run.
 
 - Demo Scene monster capture and respawn (2026-10-09): Added proximity-based monster capture handling. Players return to the position where they collected the most recent item, with a brief capture display and re-entry grace period. Capture during an active scheduled Bell ends that phase, relocates the monster off-camera when possible, and starts a fresh quiet interval. Capture during the final-key chase restores both actors to their positions when that chase began, then restarts the final chase delay. No gameplay verification was run.
+
+
+## 2026-10-09 - Missing school in GitHub Pages build
+
+- Inspected the deployed PCK: both imported school scenes had zero-byte contents.
+- Exported the current assets.blend to assets/school_web.glb for Web use; desktop retains live Blender imports.
+- CI now clears stale import caches, disables Blender imports in its checkout, and checks the finished PCK in an isolated project before deployment.
+- Fresh local Web export check loaded 477 meshes, 24 floors, 2 roofs/ceilings, 48 fluorescent fixtures, and 21 glass panes. The check rejects the previously deployed incomplete package.
+- Re-export school_web.glb with export_school_web.py after Blender edits. Browser gameplay still needs checking after deployment.
