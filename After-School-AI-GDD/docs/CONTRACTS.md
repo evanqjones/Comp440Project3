@@ -50,7 +50,10 @@ func get_world_position() -> Vector3
 func get_current_room_id() -> StringName
 func set_input_enabled(enabled: bool) -> void
 func play_capture_and_respawn(checkpoint_id: StringName) -> void
+func restore_after_capture(world_position: Vector3, checkpoint_id: StringName) -> void
 ```
+
+`restore_after_capture` is called only after School/integration has resolved the named checkpoint. It repositions the Player, clears the capture presentation, and resumes control.
 
 - Movement publishes `QUIET` while walking and `LOUD` while sprinting according to the agreed event policy. Avoid emitting per-frame events; use a cooldown/continuous-noise representation decided jointly and documented in code.
 - Opening a door and picking up an item are loud. School-owned actions should emit the event at the authoritative successful interaction point; do not double-emit from Player and School.

@@ -86,6 +86,7 @@ var _preview_lab_attention_time := 0.0
 var _preview_item_removed := false
 var _preview_brush_chase_active := false
 var _search_cone: MeshInstance3D
+var preview_search_cone_visible := true
 var _glowing_face: Node3D
 var _capsule_was_visible := true
 var _science_encounter_settled := false
@@ -170,7 +171,7 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
     collision_layer = 2
     collision_mask = 1
     _visual_capsule.visible = _capsule_was_visible
-    _search_cone.visible = true
+    _set_search_cone_visible(true)
     _glowing_face.visible = false
     _patrol_active = false
     _set_state(&"PATROL")
@@ -219,7 +220,7 @@ func end_preview_item_encounter() -> void:
     _preview_item_points.clear()
     _preview_lab_attention_time = 0.0
     _visual_capsule.visible = _capsule_was_visible
-    _search_cone.visible = true
+    _set_search_cone_visible(true)
     _glowing_face.visible = false
     if visible:
         _set_state(&"PATROL")
@@ -271,7 +272,7 @@ func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: V
     _weight_investigation_active = false
     _science_encounter_settled = false
     _visual_capsule.visible = _capsule_was_visible
-    _search_cone.visible = true
+    _set_search_cone_visible(true)
     _glowing_face.visible = false
     visible = true
     collision_layer = 2
@@ -337,7 +338,7 @@ func on_preview_item_collected(item_id: StringName) -> void:
         _start_preview_book_sink()
     elif item_id == &"brush":
         _visual_capsule.visible = true
-        _search_cone.visible = true
+        _set_search_cone_visible(true)
         _glowing_face.visible = false
     elif item_id == &"front_door_key":
         end_preview_item_encounter()
@@ -1418,4 +1419,14 @@ func _create_opaque_search_cone() -> void:
         add_child(cone)
     cone.mesh = cone_mesh
     cone.material_override = cone_material
+    cone.visible = preview_search_cone_visible
     _search_cone = cone
+
+func set_preview_search_cone_visible(should_be_visible: bool) -> void:
+    preview_search_cone_visible = should_be_visible
+    if is_instance_valid(_search_cone):
+        _search_cone.visible = should_be_visible
+
+func _set_search_cone_visible(should_be_visible: bool) -> void:
+    if is_instance_valid(_search_cone):
+        _search_cone.visible = should_be_visible and preview_search_cone_visible

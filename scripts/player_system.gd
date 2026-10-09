@@ -30,6 +30,10 @@ var stamina_exhausted: bool:
 	get:
 		return _stamina_exhausted
 
+var capture_presentation_active: bool:
+	get:
+		return _capture_presentation_active
+
 var _movement_state: StringName = &"idle"
 var _input_enabled: bool = true
 var _capture_presentation_active: bool = false
@@ -107,9 +111,16 @@ func play_capture_and_respawn(checkpoint_id: StringName) -> void:
 	_capture_checkpoint_id = checkpoint_id
 	_capture_presentation_active = true
 	set_input_enabled(false)
-	# Scaffold only: remain disabled awaiting School's authoritative restoration.
-	# Integration must supply restored position/state before clearing the guard
-	# and re-enabling. No timeout, guessed spawn, or fake checkpoint restore.
+	# Stay disabled until the integrating scene supplies a restored position.
+
+
+func restore_after_capture(world_position: Vector3, checkpoint_id: StringName) -> void:
+	global_position = world_position
+	velocity = Vector3.ZERO
+	_capture_checkpoint_id = checkpoint_id
+	_capture_presentation_active = false
+	_input_enabled = true
+	_movement_state = &"idle"
 
 
 func _update_movement_state(is_running: bool) -> void:

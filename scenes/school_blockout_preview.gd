@@ -12,10 +12,12 @@ extends Node3D
 @onready var item_help: Label = $DebugOverlay/ItemHelp
 var _character_interaction_prompt: Label3D
 
-const NORMAL_BACKGROUND := Color(0.055, 0.07, 0.1, 1.0)
-const NORMAL_AMBIENT := Color(0.55, 0.62, 0.75, 1.0)
+const NORMAL_BACKGROUND := Color(0.012, 0.022, 0.065, 1.0)
+const NORMAL_AMBIENT := Color(0.13, 0.17, 0.29, 1.0)
 const BELL_BACKGROUND := Color(0.12, 0.018, 0.028, 1.0)
 const BELL_AMBIENT := Color(0.68, 0.075, 0.095, 1.0)
+const MOONLIGHT_COLOR := Color(0.23, 0.34, 0.68, 1.0)
+const FLUORESCENT_LIGHT_COLOR := Color(1.0, 0.87, 0.66, 1.0)
 const PREVIEW_RELOCATION_INTERVAL := 10.0
 const RULER_HALL_TIMEOUT_SECONDS := 20.0
 const HALLWAY_SPAWN_FIRST_CHANCE := 0.75
@@ -41,6 +43,9 @@ const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"snack", "name": "Snack", "room": &"cafeteria", "floor": "cafe floor", "encounter": &"snack", "u": 0.1, "v": 0.12},
 	{"id": &"microphone", "name": "Microphone", "room": &"auditorium", "floor": "auditorium floor", "encounter": &"microphone", "u": 0.5, "v": 0.3},
 	{"id": &"front_door_key", "name": "Front Door Key", "room": &"storage_closet", "floor": "storage closet floor", "encounter": &"final_key", "u": 0.5, "v": 0.5}
+]
+const DEMO_REQUIRED_ITEMS: Array[StringName] = [
+	&"weight", &"book", &"brush", &"lab_coat", &"ruler", &"snack", &"microphone"
 ]
 const PREVIEW_ROOM_FLOORS: Array[Dictionary] = [
 	{"id": &"auditorium", "floor": "auditorium floor"},
@@ -85,17 +90,22 @@ const PREVIEW_WINDOW_SIDES: Array[Dictionary] = [
 ]
 
 var _bell_debug_active := false
+var demo_progression_rules_enabled := false
+var demo_monster_spawned := true
 var _spawn_markers: Array[Node3D] = []
 var _spawn_marker_nodes_visible := true
 var _preview_relocation_elapsed := 0.0
 var _camera_hallway_spawn: Node3D
 var _camera_hallway_spawn_valid := false
 var _door_navigation_links: Dictionary = {}
+var _bell_item_door_locks: Dictionary = {}
 var _active_safe_room_ids: Array[StringName] = []
 var _safe_room_lights: Dictionary = {}
+var _fluorescent_fixtures: Array[Dictionary] = []
 var _window_lurk_markers: Dictionary = {}
 var _item_markers: Dictionary = {}
 var _item_minimap_dots: Dictionary = {}
+var _entrance_minimap_dot: Control
 var _item_minimap_map: Control
 var _item_minimap_player_dot: Control
 var _item_minimap_world_bounds := AABB()
@@ -169,6 +179,7 @@ func _ready() -> void:
 	_apply_bell_debug_state()
 
 func _process(delta: float) -> void:
+	_update_fluorescent_flicker(delta)
 	_update_preview_item_encounter()
 	_update_locker_prompt()
 	_update_character_interaction_prompt()
@@ -180,6 +191,9 @@ func _process(delta: float) -> void:
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
 	_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
 	_update_item_minimap_player_dot()
+	if demo_progression_rules_enabled and not demo_monster_spawned:
+		_update_spawn_debug_label()
+		return
 	var chase_active: bool = monster.current_state == &"SHORT_CHASE" or monster.current_state == &"BELL_CHASE"
 	if _bell_debug_active or chase_active or monster.current_state == &"INVESTIGATE" or _active_preview_encounter != &"" or monster.is_preview_weight_escape_active() or _science_window_spawn_pending or monster.is_preview_window_stalking() or monster.is_preview_window_sliding() or monster.is_preview_book_sinking():
 		_update_spawn_debug_label()
@@ -299,7 +313,7 @@ func _create_preview_item_minimap() -> void:
 	layout.add_theme_constant_override("separation", 4)
 	panel.add_child(layout)
 	var title := Label.new()
-	title.text = "ITEM LOCATIONS"
+	title.text = "OBJECTIVES"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_color", Color(0.88, 0.92, 0.98))
 	title.add_theme_font_size_override("font_size", 14)
@@ -345,8 +359,23 @@ func _create_preview_item_minimap() -> void:
 		dot.add_theme_stylebox_override("panel", dot_style)
 		_item_minimap_map.add_child(dot)
 		dot.position = _item_minimap_position(marker.global_position) - dot.size * 0.5
-		dot.visible = not _collected_preview_items.has(item["id"])
 		_item_minimap_dots[item["id"]] = dot
+
+	_entrance_minimap_dot = Panel.new()
+	_entrance_minimap_dot.name = "EntranceObjectiveDot"
+	_entrance_minimap_dot.custom_minimum_size = Vector2(10.0, 10.0)
+	_entrance_minimap_dot.size = _entrance_minimap_dot.custom_minimum_size
+	_entrance_minimap_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var entrance_dot_style := StyleBoxFlat.new()
+	entrance_dot_style.bg_color = Color(1.0, 0.78, 0.12, 1.0)
+	entrance_dot_style.border_color = Color(0.16, 0.12, 0.03, 1.0)
+	entrance_dot_style.set_border_width_all(1)
+	entrance_dot_style.set_corner_radius_all(5)
+	_entrance_minimap_dot.add_theme_stylebox_override("panel", entrance_dot_style)
+	_item_minimap_map.add_child(_entrance_minimap_dot)
+	var entrance_door := _find_school_entrance_door()
+	var entrance_position := entrance_door.global_position if is_instance_valid(entrance_door) else Vector3.ZERO
+	_entrance_minimap_dot.position = _item_minimap_position(entrance_position) - _entrance_minimap_dot.size * 0.5
 
 	_item_minimap_player_dot = Panel.new()
 	_item_minimap_player_dot.name = "PlayerDot"
@@ -363,11 +392,12 @@ func _create_preview_item_minimap() -> void:
 	_update_item_minimap_player_dot()
 
 	var legend := Label.new()
-	legend.text = "Blue: you    Yellow: uncollected items"
+	legend.text = "Blue: you    Yellow: current objectives"
 	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	legend.add_theme_color_override("font_color", Color(0.92, 0.92, 0.92))
 	legend.add_theme_font_size_override("font_size", 10)
 	layout.add_child(legend)
+	_refresh_item_minimap_objectives()
 
 func _add_minimap_floor_entry(floor_name: String, entries: Array[Dictionary], seen: Dictionary, has_bounds: bool) -> void:
 	var floor_node := _find_room_floor(school, floor_name)
@@ -397,6 +427,30 @@ func _hide_item_minimap_dot(item_id: StringName) -> void:
 	if dot != null:
 		dot.visible = false
 
+func _refresh_item_minimap_objectives() -> void:
+	var has_keys := _collected_preview_items.has(&"school_keys")
+	var all_other_items_collected := _demo_all_required_items_collected() if demo_progression_rules_enabled else false
+	var final_key_collected := _collected_preview_items.has(&"front_door_key")
+	for item in PREVIEW_ITEMS:
+		var item_id: StringName = item["id"]
+		var dot := _item_minimap_dots.get(item_id) as Control
+		if dot == null:
+			continue
+		var show_dot := not _collected_preview_items.has(item_id)
+		if demo_progression_rules_enabled:
+			if not has_keys:
+				show_dot = item_id == &"school_keys"
+			elif item_id == &"front_door_key":
+				show_dot = all_other_items_collected and not final_key_collected
+			else:
+				show_dot = DEMO_REQUIRED_ITEMS.has(item_id) and not _collected_preview_items.has(item_id)
+		dot.visible = show_dot
+	if _entrance_minimap_dot != null:
+		var entrance_door := _find_school_entrance_door()
+		if is_instance_valid(entrance_door):
+			_entrance_minimap_dot.position = _item_minimap_position(entrance_door.global_position) - _entrance_minimap_dot.size * 0.5
+		_entrance_minimap_dot.visible = demo_progression_rules_enabled and final_key_collected and not _final_exit_door_slammed
+
 func _update_item_minimap_player_dot() -> void:
 	if _item_minimap_player_dot == null or player == null or _item_minimap_map == null:
 		return
@@ -420,6 +474,7 @@ func _update_preview_item_encounter() -> void:
 			_final_exit_door_slammed = true
 			_final_exit_door.call("set_interaction_locked", true)
 			_final_exit_door.call("slam_shut")
+			_refresh_item_minimap_objectives()
 			item_help.text = "You made it outside | The entrance slammed shut behind you"
 		else:
 			item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
@@ -447,7 +502,7 @@ func _update_preview_item_encounter() -> void:
 		return
 	var science_bounds: AABB = _item_room_bounds.get(&"science_classroom", AABB())
 	var player_in_science := science_bounds.size != Vector3.ZERO and _point_inside_room(player.global_position, science_bounds)
-	if player_in_science and not _collected_preview_items.has(&"lab_coat"):
+	if player_in_science and not _collected_preview_items.has(&"lab_coat") and (not demo_progression_rules_enabled or _demo_item_available(&"lab_coat")):
 		if not _science_encounter_started:
 			_science_encounter_started = true
 			_science_spawn_pending = true
@@ -460,6 +515,8 @@ func _update_preview_item_encounter() -> void:
 	var current_item: Dictionary = {}
 	for item in PREVIEW_ITEMS:
 		if item["encounter"] == &"" or _collected_preview_items.has(item["id"]):
+			continue
+		if demo_progression_rules_enabled and not _demo_item_available(item["id"]):
 			continue
 		if item["encounter"] == &"final_key":
 			continue
@@ -745,7 +802,8 @@ func _try_collect_preview_item() -> bool:
 		return false
 	var item_id: StringName = nearest_item["id"]
 	_collected_preview_items[item_id] = true
-	_hide_item_minimap_dot(item_id)
+	_refresh_demo_door_locks()
+	_refresh_item_minimap_objectives()
 	(_item_markers[item_id] as Node3D).visible = false
 	player.noise_emitted.emit(NoiseEvent.new(player.global_position, NoiseEvent.NoiseLevel.LOUD, item_id))
 	monster.on_preview_item_collected(item_id)
@@ -797,12 +855,17 @@ func _start_final_key_bell() -> void:
 	_final_bell_started = true
 	_bell_debug_active = true
 	preview_environment.environment.background_color = BELL_BACKGROUND
+	preview_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	preview_environment.environment.ambient_light_color = BELL_AMBIENT
+	preview_environment.environment.ambient_light_energy = 0.55
 	preview_light.light_color = Color(1.0, 0.12, 0.16)
+	preview_light.light_energy = 1.1
+	preview_light.shadow_enabled = true
 	_active_safe_room_ids.clear()
 	for safe_light in _safe_room_lights.values():
 		(safe_light as OmniLight3D).queue_free()
 	_safe_room_lights.clear()
+	_sync_fluorescent_lights()
 	_sync_safe_room_door_links()
 	var no_safe_rooms: Array[StringName] = []
 	monster.set_safe_rooms(no_safe_rooms)
@@ -1119,6 +1182,8 @@ func _nearest_collectible_preview_item() -> Dictionary:
 	var nearest_item: Dictionary = {}
 	var nearest_distance := INF
 	for item in PREVIEW_ITEMS:
+		if demo_progression_rules_enabled and not _demo_item_available(item["id"]):
+			continue
 		if _collected_preview_items.has(item["id"]) or not _item_markers.has(item["id"]):
 			continue
 		if not _item_room_bounds.has(item["room"]) or not _point_inside_room(player.global_position, _item_room_bounds[item["room"]]):
@@ -1129,6 +1194,103 @@ func _nearest_collectible_preview_item() -> Dictionary:
 			nearest_distance = distance
 			nearest_item = item
 	return nearest_item if nearest_distance <= 1.65 else {}
+
+func _demo_item_available(item_id: StringName) -> bool:
+	if item_id == &"school_keys":
+		return not _collected_preview_items.has(&"school_keys")
+	if not _collected_preview_items.has(&"school_keys"):
+		return false
+	if item_id == &"front_door_key":
+		return _demo_all_required_items_collected()
+	return DEMO_REQUIRED_ITEMS.has(item_id) and not _collected_preview_items.has(item_id)
+
+func _demo_all_required_items_collected() -> bool:
+	for item_id in DEMO_REQUIRED_ITEMS:
+		if not _collected_preview_items.has(item_id):
+			return false
+	return true
+
+func _refresh_demo_door_locks() -> void:
+	if not demo_progression_rules_enabled:
+		return
+	var has_school_keys := _collected_preview_items.has(&"school_keys")
+	var storage_unlocked := _demo_all_required_items_collected()
+	for door in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door_id := String(door.get("door_id")).to_lower()
+		var progression_locked := false
+		if door_id.contains("storage"):
+			progression_locked = not storage_unlocked
+		elif not has_school_keys:
+			progression_locked = not _demo_is_nurse_office_main_office_door(door_id, door.global_position)
+		door.call("set_interaction_locked", progression_locked or _bell_item_door_locks.has(door))
+
+func _set_demo_bell_item_door_locks(active: bool) -> void:
+	if not demo_progression_rules_enabled:
+		return
+	if not active:
+		for door in _bell_item_door_locks:
+			if is_instance_valid(door):
+				door.call("set_interaction_locked", false)
+		_bell_item_door_locks.clear()
+		_refresh_demo_door_locks()
+		return
+	for door in get_tree().get_nodes_in_group("preview_school_doors"):
+		if not is_instance_valid(door):
+			continue
+		for item in PREVIEW_ITEMS:
+			if _collected_preview_items.has(item["id"]):
+				continue
+			var room_id: StringName = item["room"]
+			if not _item_room_bounds.has(room_id):
+				continue
+			var room_bounds: AABB = _item_room_bounds[room_id]
+			if _distance_xz_to_bounds(door.global_position, room_bounds) > 1.5:
+				continue
+			# Keep an occupant's exit usable if the bell begins while they are already
+			# inside the room whose item is still waiting to be collected.
+			if is_instance_valid(player) and _point_inside_room(player.global_position, room_bounds):
+				continue
+			_bell_item_door_locks[door] = true
+			door.call("set_interaction_locked", true)
+			if bool(door.get("_opened")):
+				door.call("slam_shut")
+			break
+
+func _demo_is_main_office_lobby_door(door_id: String, door_position: Vector3) -> bool:
+	if door_id.contains("main office") and door_id.contains("lobby"):
+		return true
+	# The Lobby floor bounds overlap the Nurse Office boundary, so proximity to
+	# both floor AABBs alone can misclassify the Nurse Office-to-Main Office door.
+	var nurse_floor := _find_room_floor(school, "nurse office floor")
+	if nurse_floor != null and nurse_floor.mesh != null:
+		var nurse_bounds: AABB = nurse_floor.global_transform * nurse_floor.mesh.get_aabb()
+		if _distance_xz_to_bounds(door_position, nurse_bounds) <= 2.0:
+			return false
+	var office_floor := _find_room_floor(school, "main office floor")
+	var lobby_floor := _find_room_floor(school, "lobby floor")
+	if office_floor == null or office_floor.mesh == null or lobby_floor == null or lobby_floor.mesh == null:
+		return false
+	var office_bounds: AABB = office_floor.global_transform * office_floor.mesh.get_aabb()
+	var lobby_bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
+	return _distance_xz_to_bounds(door_position, office_bounds) <= 2.0 and _distance_xz_to_bounds(door_position, lobby_bounds) <= 2.0
+
+func _demo_is_nurse_office_main_office_door(door_id: String, door_position: Vector3) -> bool:
+	if door_id.contains("nurse office") and door_id.contains("main office"):
+		return true
+	var nurse_floor := _find_room_floor(school, "nurse office floor")
+	var office_floor := _find_room_floor(school, "main office floor")
+	if nurse_floor == null or nurse_floor.mesh == null or office_floor == null or office_floor.mesh == null:
+		return false
+	var nurse_bounds: AABB = nurse_floor.global_transform * nurse_floor.mesh.get_aabb()
+	var office_bounds: AABB = office_floor.global_transform * office_floor.mesh.get_aabb()
+	return _distance_xz_to_bounds(door_position, nurse_bounds) <= 2.0 and _distance_xz_to_bounds(door_position, office_bounds) <= 2.0
+
+func _distance_xz_to_bounds(point: Vector3, bounds: AABB) -> float:
+	var nearest := Vector2(
+		clampf(point.x, bounds.position.x, bounds.end.x),
+		clampf(point.z, bounds.position.z, bounds.end.z)
+	)
+	return Vector2(point.x, point.z).distance_to(nearest)
 
 func _nearest_locker_spot_index() -> int:
 	var closest_index := -1
@@ -1499,7 +1661,8 @@ func _choose_preview_safe_rooms() -> void:
 		if room_id != &"" and room_id != &"lobby" and not eligible_rooms.has(room_id):
 			eligible_rooms.append(room_id)
 	eligible_rooms.shuffle()
-	for index in mini(3, eligible_rooms.size()):
+	var safe_room_count := 5 if demo_progression_rules_enabled else 3
+	for index in mini(safe_room_count, eligible_rooms.size()):
 		_active_safe_room_ids.append(eligible_rooms[index])
 	for room_id in _safe_room_lights:
 		(_safe_room_lights[room_id] as OmniLight3D).queue_free()
@@ -1601,6 +1764,12 @@ func _create_school_doors() -> void:
 			allowed_side,
 			bounds.size.z > bounds.size.x
 		)
+		if demo_progression_rules_enabled:
+			var door_id_lower := String(door.door_id).to_lower()
+			if door_id_lower.contains("storage"):
+				door.set_interaction_locked(true)
+			elif not _collected_preview_items.has(&"school_keys"):
+				door.set_interaction_locked(not _demo_is_nurse_office_main_office_door(door_id_lower, door.global_position))
 		door.opened.connect(_on_preview_door_opened)
 		door.open_state_changed.connect(_on_preview_door_state_changed)
 		door.add_to_group("preview_school_doors")
@@ -1615,6 +1784,8 @@ func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
 
 func _on_preview_door_opened(door_id: StringName, world_position: Vector3, loudness: float) -> void:
 	print("Door opened: %s (noise %.0f%%)" % [door_id, loudness * 100.0])
+	if demo_progression_rules_enabled and not demo_monster_spawned:
+		return
 	monster.receive_preview_door_noise(world_position, loudness)
 
 func _relocate_nearest_spawn_to_noise(source_position: Vector3) -> void:
@@ -1735,6 +1906,7 @@ func _make_spawn_panel(candidate: Dictionary, spawn_position: Vector3) -> Node3D
 	var marker := Node3D.new()
 	marker.name = "Spawn_" + String(candidate["id"])
 	marker.position = spawn_position
+	marker.visible = _spawn_marker_nodes_visible
 	marker.add_to_group("monster_spawn_points")
 	marker.set_meta("spawn_kind", candidate["kind"])
 	marker.set_meta("spawn_id", candidate["id"])
@@ -1815,10 +1987,16 @@ func _start_bell_chase_from_hallway() -> bool:
 	for marker in hallway_candidates:
 		if not monster.try_preview_offscreen_teleport(marker.global_position, player.player_camera, true):
 			continue
+		if demo_progression_rules_enabled and not demo_monster_spawned:
+			_activate_demo_monster()
 		monster.call("begin_preview_bell_phase_chase")
 		print("Monster spawned in hallway for Bell chase: %s" % marker.get_meta("spawn_id", marker.name))
 		return true
 	return false
+
+func _activate_demo_monster() -> void:
+	# Overridden by DemoScene, where the monster is gated behind the School Keys.
+	pass
 
 func _update_follow_camera_hallway_spawn() -> bool:
 	if not is_instance_valid(_camera_hallway_spawn) or not is_instance_valid(player.player_camera):
@@ -1859,15 +2037,116 @@ func _update_follow_camera_hallway_spawn() -> bool:
 	return true
 
 func _load_school_model() -> void:
-	var document := GLTFDocument.new()
-	var state := GLTFState.new()
-	var error: Error = document.append_from_file("res://assets/school_blockout.glb", state)
-	if error != OK:
-		push_error("Could not load assets/school_blockout.glb (error %s)." % error)
+	var imported_scene := load("res://assets.blend") as PackedScene
+	if imported_scene == null:
+		push_error("Could not load the imported Blender scene at res://assets.blend.")
 		return
-	var model: Node = document.generate_scene(state)
+	var model: Node = imported_scene.instantiate()
 	model.name = "SchoolModel"
+	school.visible = true
+	if model is Node3D:
+		(model as Node3D).visible = true
+	_restore_school_roof_visibility(model)
+	_hide_imported_door_markers(model)
 	school.add_child(model)
+	_add_fluorescent_runtime_lights(model)
+
+func _add_fluorescent_runtime_lights(node: Node) -> void:
+	if node is MeshInstance3D and node.mesh != null and String(node.name).to_lower().contains("fluorescent -"):
+		var fixture: MeshInstance3D = node
+		var fixture_bounds: AABB = fixture.global_transform * fixture.mesh.get_aabb()
+		var lamp := OmniLight3D.new()
+		lamp.name = String(fixture.name).replace("Fluorescent - ", "WarmLight - ")
+		lamp.light_color = FLUORESCENT_LIGHT_COLOR
+		lamp.light_energy = 1.1
+		lamp.omni_range = 6.5
+		lamp.shadow_enabled = false
+		school.add_child(lamp)
+		lamp.global_position = fixture_bounds.get_center() - Vector3.UP * 0.55
+		var fixture_data := {
+			"lamp": lamp,
+			"room_id": _preview_fixture_room_id(String(fixture.name)),
+			"fixture": fixture,
+			"lit_material": null,
+			"off_material": null,
+			"flicker_timer": randf_range(3.0, 16.0),
+			"flicker_off_timer": 0.0,
+			"flicker_off": false
+		}
+		if fixture.mesh.get_surface_count() > 1:
+			var source_material := fixture.get_active_material(1)
+			if source_material is BaseMaterial3D:
+				var lit_material := (source_material as BaseMaterial3D).duplicate() as BaseMaterial3D
+				lit_material.emission_enabled = true
+				lit_material.emission = Color(1.0, 0.88, 0.68)
+				lit_material.emission_energy_multiplier = 1.35
+				var off_material := (source_material as BaseMaterial3D).duplicate() as BaseMaterial3D
+				off_material.emission_enabled = false
+				fixture.set_surface_override_material(1, lit_material)
+				fixture_data["lit_material"] = lit_material
+				fixture_data["off_material"] = off_material
+		_fluorescent_fixtures.append(fixture_data)
+	for child in node.get_children():
+		_add_fluorescent_runtime_lights(child)
+
+func _preview_fixture_room_id(fixture_name: String) -> StringName:
+	var normalized_name := fixture_name.to_lower().replace("fluorescent - ", "")
+	for room in PREVIEW_ROOM_FLOORS:
+		var floor_name: String = room["floor"]
+		var room_name := floor_name.trim_suffix(" floor")
+		if normalized_name.begins_with(room_name + " -"):
+			return room["id"]
+	return &""
+
+func _sync_fluorescent_lights() -> void:
+	for fixture_data in _fluorescent_fixtures:
+		var room_id: StringName = fixture_data["room_id"]
+		var fixture_should_be_lit := not _bell_debug_active or (not room_id.is_empty() and _active_safe_room_ids.has(room_id))
+		fixture_data["flicker_off"] = false
+		fixture_data["flicker_off_timer"] = 0.0
+		fixture_data["flicker_timer"] = randf_range(3.0, 16.0)
+		_set_fluorescent_fixture_lit(fixture_data, fixture_should_be_lit)
+
+func _update_fluorescent_flicker(delta: float) -> void:
+	for fixture_data in _fluorescent_fixtures:
+		# During Bell phases, safe-room fluorescent fixtures remain continuously lit.
+		# Every other fixture is deliberately dark for the whole phase.
+		if _bell_debug_active:
+			continue
+		if float(fixture_data["flicker_off_timer"]) > 0.0:
+			fixture_data["flicker_off_timer"] = maxf(0.0, float(fixture_data["flicker_off_timer"]) - delta)
+			if float(fixture_data["flicker_off_timer"]) == 0.0:
+				fixture_data["flicker_off"] = false
+				fixture_data["flicker_timer"] = randf_range(3.0, 16.0)
+				_set_fluorescent_fixture_lit(fixture_data, true)
+			continue
+		fixture_data["flicker_timer"] = float(fixture_data["flicker_timer"]) - delta
+		if float(fixture_data["flicker_timer"]) <= 0.0:
+			fixture_data["flicker_off"] = true
+			fixture_data["flicker_off_timer"] = randf_range(0.08, 0.35) if randf() < 0.65 else randf_range(0.7, 3.5)
+			_set_fluorescent_fixture_lit(fixture_data, false)
+
+func _set_fluorescent_fixture_lit(fixture_data: Dictionary, should_be_lit: bool) -> void:
+	var lamp := fixture_data["lamp"] as OmniLight3D
+	if is_instance_valid(lamp):
+		lamp.visible = should_be_lit
+	var fixture := fixture_data["fixture"] as MeshInstance3D
+	if is_instance_valid(fixture) and fixture_data["lit_material"] != null:
+		fixture.set_surface_override_material(1, fixture_data["lit_material"] if should_be_lit else fixture_data["off_material"])
+
+func _restore_school_roof_visibility(node: Node) -> void:
+	if node is GeometryInstance3D:
+		var node_name := String(node.name).to_lower()
+		if node_name.contains("roof") or node_name.contains("ceiling") or node_name.contains("ceil"):
+			node.visible = true
+	for child in node.get_children():
+		_restore_school_roof_visibility(child)
+
+func _hide_imported_door_markers(node: Node) -> void:
+	if node is GeometryInstance3D and String(node.name).to_lower().contains("door swing"):
+		node.visible = false
+	for child in node.get_children():
+		_hide_imported_door_markers(child)
 
 func _add_school_collisions(node: Node) -> void:
 	if node is MeshInstance3D and node.mesh != null and not bool(node.get_meta("preview_collision_disabled", false)):
@@ -1933,8 +2212,12 @@ func _place_monster_deeper_in_hallway() -> void:
 
 func _apply_bell_debug_state() -> void:
 	preview_environment.environment.background_color = BELL_BACKGROUND if _bell_debug_active else NORMAL_BACKGROUND
+	preview_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	preview_environment.environment.ambient_light_color = BELL_AMBIENT if _bell_debug_active else NORMAL_AMBIENT
-	preview_light.light_color = Color(1.0, 0.12, 0.16) if _bell_debug_active else Color.WHITE
+	preview_environment.environment.ambient_light_energy = 0.55 if _bell_debug_active else 0.42
+	preview_light.light_color = Color(1.0, 0.12, 0.16) if _bell_debug_active else MOONLIGHT_COLOR
+	preview_light.light_energy = 1.1 if _bell_debug_active else 0.32
+	preview_light.shadow_enabled = true
 	if _bell_debug_active:
 		_choose_preview_safe_rooms()
 		bell_status.text = "BELL DEBUG: ON (Z) | SAFE: %s" % ", ".join(PackedStringArray(_active_safe_room_ids.map(func(id: StringName) -> String: return String(id))))
@@ -1945,8 +2228,10 @@ func _apply_bell_debug_state() -> void:
 			(safe_light as OmniLight3D).queue_free()
 		_safe_room_lights.clear()
 		bell_status.text = "BELL DEBUG: OFF (Z)"
+	_sync_fluorescent_lights()
 	_sync_safe_room_door_links()
 	monster.set_safe_rooms(_active_safe_room_ids)
+	_set_demo_bell_item_door_locks(_bell_debug_active)
 	if _bell_debug_active:
 		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
 	else:
