@@ -21,7 +21,7 @@ The default scene is now `scenes/after_school.tscn`. It contains the team's larg
 - Real pickups drive pacing and visible progress. The front key cannot skip the other objectives; leaving after the final key stops the Bell/audio and shows completion.
 - Full-building room lookup chooses the smallest containing room, so large overlapping lobby slabs do not hide the Nurse/Main Office. School exposes room IDs, door states, objective snapshots, stalking candidates, and reachable navigation paths.
 
-Implementation is in `scripts/school/school_game.gd`, an integration extension of the team's scene. Player/Monster controllers, encounter scripts, team map, and original preview are unchanged from imported main commit **cddbf56**. Changes are committed and published only to **School_System**; other branches are not modified. The earlier `scenes/school_system_demo.tscn` remains an optional isolated test scene, not the default game.
+Implementation is in `scripts/school/school_game.gd`, an integration extension of the team's scene. Player/Monster controllers, encounter scripts, team map, and original preview are unchanged from imported main commit **755970a**. Changes are committed and published only to **School_System**; other branches are not modified. The earlier `scenes/school_system_demo.tscn` remains an optional isolated test scene, not the default game.
 
 ## Verification and boundaries
 
