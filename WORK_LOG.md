@@ -290,3 +290,5 @@ This log records the school-model and Godot-preview work completed with the user
 - Bell hallway spawn and direct pursuit (2026-10-09): The regular Z-triggered Bell phase waits for an off-camera hallway spawn, pauses for three seconds, then directly pursues the player. Final-key pickup remains a separate interaction: it spawns the monster in the farthest navigable Storage Closet corner, keeps its five-second pause and trailing-distance chase, and does not relocate after chase starts. No Godot runtime test was run for this update.
 
 - Regular Bell chase adjustment (2026-10-09): The Z-triggered Bell now spawns from an off-camera hallway location, waits three seconds, and pathfinds directly to the player. The final-key Storage Closet interaction retains its existing five-second delay and trailing-distance chase. Updated progress notes; no runtime test was run.
+
+- Lab Coat spotlight adjustment (2026-10-09): Set the Lab Coat encounter's searchlight and detection distance to 6 m (double the normal 3 m range). Other encounters retain their existing ranges; the normal sight distance is restored when the encounter ends. No runtime check was run.
