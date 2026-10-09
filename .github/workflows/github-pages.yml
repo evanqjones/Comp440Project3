@@ -45,7 +45,9 @@ jobs:
         run: godot --headless --editor --path . --import
 
       - name: Export Web build
-        run: godot --headless --path . --export-release "GitHub Pages" build/index.html
+        run: |
+          mkdir -p build
+          godot --headless --path . --export-release "GitHub Pages" build/index.html
 
       - name: Configure GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
