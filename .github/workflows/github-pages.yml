@@ -21,10 +21,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Install Blender for .blend imports
+      - name: Prepare portable Web assets
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes blender unzip
+          # Never reuse the developer-machine import cache tracked in this repo.
+          rm -rf -- .godot
+          # Web uses the committed GLB; Blender remains the desktop authoring source.
+          printf '\n[filesystem]\nimport/blender/enabled=false\n' >> project.godot
 
       - name: Install Godot 4.7.2 and Web export templates
         shell: bash
@@ -48,6 +50,16 @@ jobs:
         run: |
           mkdir -p build
           godot --headless --path . --export-release "GitHub Pages" build/index.html
+
+      - name: Check school in exported package
+        run: |
+          # Run outside the source project so missing pack files cannot fall back
+          # to resources left on the build machine.
+          CHECK_DIR="$RUNNER_TEMP/school-pack-check"
+          mkdir -p "$CHECK_DIR"
+          cp tools/validate_web_school.gd "$CHECK_DIR/validate_web_school.gd"
+          printf 'config_version=5\n' > "$CHECK_DIR/project.godot"
+          godot --headless --path "$CHECK_DIR" --script validate_web_school.gd -- "$GITHUB_WORKSPACE/build/index.pck"
 
       - name: Configure GitHub Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

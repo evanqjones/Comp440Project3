@@ -1,5 +1,7 @@
 extends Node3D
 
+const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
+
 @export var generate_school_collision: bool = true
 
 @onready var school: Node3D = $School
@@ -2037,9 +2039,9 @@ func _update_follow_camera_hallway_spawn() -> bool:
 	return true
 
 func _load_school_model() -> void:
-	var imported_scene := load("res://assets.blend") as PackedScene
+	var imported_scene: PackedScene = WEB_SCHOOL_MODEL if OS.has_feature("web") else load("res://assets.blend") as PackedScene
 	if imported_scene == null:
-		push_error("Could not load the imported Blender scene at res://assets.blend.")
+		push_error("Could not load the school model.")
 		return
 	var model: Node = imported_scene.instantiate()
 	model.name = "SchoolModel"
