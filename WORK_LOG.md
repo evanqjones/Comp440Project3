@@ -359,3 +359,5 @@ This log records the school-model and Godot-preview work completed with the user
 ## 2026-10-09 - Browser-safe sneak control
 
 - Changed hold-to-sneak/crouch from Ctrl to Space to avoid the browser Ctrl+W close-tab shortcut. Updated the Demo controls hint and controls documentation.
+
+- Classroom/science/art furniture pass (2026-10-12): Added 113 low-poly prop instances across Classrooms A-E, Science Classroom, Lab Room, and Art Room using 14 reusable designs and 8 shared materials. Added create_classroom_science_art_props.py for repeatable generation, refreshed assets/school_web.glb, and manually verified the furnished Demo Scene in Godot. No gameplay scripts were changed.
