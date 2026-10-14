@@ -1023,6 +1023,14 @@ func _start_artroom_brush_escape() -> void:
 	item_help.text = "The ceiling searchlight is sweeping the Artroom | Escape through the Bathroom door"
 
 
+func restart_artroom_brush_escape_after_capture() -> void:
+	if not is_instance_valid(_artroom_brush_encounter):
+		return
+	_brush_escape_active = true
+	_active_preview_encounter = &"brush_escape"
+	_artroom_brush_encounter.call("restart_after_capture")
+
+
 func _find_artroom_hallway_door(room_bounds: AABB) -> Node3D:
 	var room_center := Vector3(room_bounds.position.x + room_bounds.size.x * 0.5, room_bounds.position.y, room_bounds.position.z + room_bounds.size.z * 0.5)
 	var best_door: Node3D
@@ -1398,6 +1406,18 @@ func _start_ruler_hall_event() -> void:
 	_preview_relocation_elapsed = 0.0
 	_active_preview_encounter = &"ruler_hall"
 	item_help.text = "Ruler collected | Monster approaching: hide in a hallway locker"
+
+func restart_ruler_hall_event_after_capture() -> void:
+	if not _ruler_hall_event_active:
+		return
+	monster.call("restart_preview_ruler_hall_event")
+	_ruler_hall_elapsed = 0.0
+	_ruler_hall_fallback_retry_elapsed = 0.0
+	_ruler_hall_fallback_pending = false
+	_ruler_hall_monster_at_science_end = false
+	_preview_relocation_elapsed = 0.0
+	_active_preview_encounter = &"ruler_hall"
+	item_help.text = "Caught! Ruler encounter restarted from the first hallway spawn"
 
 func _science_classroom_doorway_spawn(science_bounds: AABB) -> Vector3:
 	var best_position := Vector3(science_bounds.position.x + science_bounds.size.x * 0.08, science_bounds.end.y, science_bounds.end.z + 1.1)

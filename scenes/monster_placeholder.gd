@@ -231,6 +231,8 @@ func begin_preview_brush_chase() -> void:
 	if not is_instance_valid(_player_target):
 		return
 	_preview_brush_chase_active = true
+	_glowing_face.visible = true
+	_set_search_cone_visible(false)
 	_preview_item_encounter = &"brush"
 	_preview_player_hidden = false
 	visible = true
@@ -241,6 +243,19 @@ func begin_preview_brush_chase() -> void:
 	velocity = Vector3.ZERO
 	set_physics_process(true)
 	_set_state(&"SHORT_CHASE")
+
+
+func set_preview_brush_searchlight_direction(direction: Vector3) -> void:
+	direction.y = 0.0
+	if direction.length_squared() > 0.001:
+		direction = direction.normalized()
+		# The monster hangs upside down during the sweep, so its yaw uses the
+		# ceiling-facing forward vector while the searchlight points across the floor.
+		global_rotation = Vector3(PI, atan2(direction.x, direction.z), 0.0)
+	if direction.length_squared() > 0.001 and is_instance_valid(_glowing_face):
+		_glowing_face.visible = true
+		_glowing_face.global_basis = Basis.looking_at(direction, Vector3.UP)
+	_set_search_cone_visible(false)
 
 func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: Vector3, beyond_science: Vector3, beyond_a: Vector3, science_corner: Vector3, a_corner: Vector3) -> void:
 	_preview_window_stalk_active = false
@@ -297,6 +312,20 @@ func request_preview_ruler_hall_spawn(science_side: bool) -> void:
 	_preview_ruler_hall_pending_side_science = science_side
 	_preview_ruler_hall_spawn_position = _preview_ruler_hall_science_spawn if science_side else _preview_ruler_hall_a_spawn
 	_preview_ruler_hall_spawn_pending = true
+
+func restart_preview_ruler_hall_event() -> void:
+	if not _preview_ruler_hall_active:
+		return
+	var classroom_a_spawn := _preview_ruler_hall_a_spawn
+	var science_spawn := _preview_ruler_hall_science_spawn
+	var beyond_science := _preview_ruler_hall_end_science
+	var beyond_a := _preview_ruler_hall_end_a
+	var science_corner := _preview_ruler_hall_corner_science
+	var a_corner := _preview_ruler_hall_corner_a
+	begin_preview_ruler_hall_event(classroom_a_spawn, science_spawn, beyond_science, beyond_a, science_corner, a_corner)
+	global_position = classroom_a_spawn
+	_preview_ruler_hall_spawn_pending = false
+	_navigation_agent.target_position = _preview_ruler_hall_end_science
 
 func is_preview_ruler_hall_complete() -> bool:
 	return _preview_ruler_hall_complete

@@ -15,6 +15,7 @@ var _demo_last_item_checkpoint := Vector3.ZERO
 var _demo_capture_respawn_timer := 0.0
 var _demo_capture_immunity_remaining := 0.0
 var _demo_capture_was_final_chase := false
+var _demo_capture_interaction: StringName = &""
 var _demo_final_chase_positions_saved := false
 var _demo_final_chase_player_position := Vector3.ZERO
 var _demo_final_chase_monster_position := Vector3.ZERO
@@ -146,6 +147,9 @@ func _update_demo_capture_and_respawn(delta: float) -> void:
 
 func _begin_demo_capture_respawn() -> void:
 	_demo_capture_was_final_chase = _final_bell_started
+	_demo_capture_interaction = &""
+	if _active_preview_encounter in [&"ruler_hall", &"microphone", &"microphone_escape", &"brush_escape"]:
+		_demo_capture_interaction = _active_preview_encounter
 	if _demo_capture_was_final_chase and not _demo_final_chase_positions_saved:
 		_demo_final_chase_positions_saved = true
 		_demo_final_chase_player_position = player.global_position
@@ -166,6 +170,7 @@ func _begin_demo_capture_respawn() -> void:
 		_preview_relocation_elapsed = 0.0
 
 func _finish_demo_capture_respawn() -> void:
+	var captured_interaction := _demo_capture_interaction
 	if _demo_capture_was_final_chase and _demo_final_chase_positions_saved:
 		player.call("restore_after_capture", _demo_final_chase_player_position, &"final_chase")
 		monster.global_position = _demo_final_chase_monster_position
@@ -178,11 +183,26 @@ func _finish_demo_capture_respawn() -> void:
 		item_help.text = "Final chase restarted | Reach the entrance"
 	else:
 		player.call("restore_after_capture", _demo_last_item_checkpoint, &"last_item")
-		_try_debug_offscreen_relocation()
-		item_help.text = "Respawned at your last collected item"
+		match captured_interaction:
+			&"ruler_hall":
+				restart_ruler_hall_event_after_capture()
+			&"microphone":
+				_auditorium_encounter.call("restart_after_capture", false)
+				item_help.text = "Caught! Microphone encounter restarted at the stage"
+			&"microphone_escape":
+				_microphone_escape_finish_started = false
+				_auditorium_encounter.call("restart_after_capture", true)
+				item_help.text = "Caught! Microphone chase restarted at the stage"
+			&"brush_escape":
+				restart_artroom_brush_escape_after_capture()
+				item_help.text = "Caught! Paintbrush encounter restarted in the Artroom"
+			_:
+				_try_debug_offscreen_relocation()
+				item_help.text = "Respawned at your last collected item"
 	_demo_capture_respawn_timer = 0.0
 	_demo_capture_immunity_remaining = 1.5
 	_demo_capture_was_final_chase = false
+	_demo_capture_interaction = &""
 
 func _try_spawn_demo_monster_after_keys() -> void:
 	if not _demo_keys_unlocked or demo_monster_spawned:

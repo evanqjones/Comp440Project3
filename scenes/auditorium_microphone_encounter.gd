@@ -23,6 +23,8 @@ var _original_facing := Vector3.FORWARD
 var _phase_timer := 0.0
 var _original_sight_distance := 3.0
 var _original_sight_half_width := 1.125
+var _starting_room_bounds := AABB()
+var _starting_stage_position := Vector3.ZERO
 
 
 func configure(monster: CharacterBody3D, player: CharacterBody3D) -> void:
@@ -36,6 +38,8 @@ func configure(monster: CharacterBody3D, player: CharacterBody3D) -> void:
 func begin_guard(room_bounds: AABB, stage_position: Vector3) -> void:
 	if not is_instance_valid(_monster) or not is_instance_valid(_player):
 		return
+	_starting_room_bounds = room_bounds
+	_starting_stage_position = stage_position
 	_active = true
 	_phase = &"guard"
 	_lost_sight_time = 0.0
@@ -65,6 +69,15 @@ func begin_escape() -> void:
 	_lost_sight_time = 0.0
 	_last_path_target = Vector3(INF, INF, INF)
 	_monster.call("_set_state", &"PATROL")
+
+
+func restart_after_capture(restart_pickup_turn: bool) -> void:
+	if not _active or _starting_room_bounds.size == Vector3.ZERO:
+		return
+	finish_encounter()
+	begin_guard(_starting_room_bounds, _starting_stage_position)
+	if restart_pickup_turn:
+		begin_escape()
 
 
 func finish_encounter() -> void:
