@@ -532,7 +532,10 @@ func _update_preview_item_encounter() -> void:
 			_refresh_item_minimap_objectives()
 			item_help.text = "You made it outside | The entrance slammed shut behind you"
 		else:
-			item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
+			item_help.text = "Escape school"
+		return
+	if _bell_debug_active:
+		item_help.text = "Hide"
 		return
 	if _brush_escape_active:
 		if _player_has_reached_artroom_hallway():
@@ -597,7 +600,10 @@ func _update_preview_item_encounter() -> void:
 		if is_instance_valid(_auditorium_encounter):
 			_auditorium_encounter.call("finish_encounter")
 		monster.end_preview_item_encounter()
-		item_help.text = "Item circles: E to collect when close | School Keys have no monster encounter"
+		if not _collected_preview_items.has(&"school_keys"):
+			item_help.text = "Get school keys"
+		else:
+			item_help.text = "Collected your missing items"
 		return
 	var encounter: StringName = current_item["encounter"]
 	if _active_preview_encounter != encounter:
