@@ -2,6 +2,7 @@ extends Node3D
 
 const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
 const LOCKER_MODEL: PackedScene = preload("res://assets/lockers.glb")
+const PICKUP_AURA_SHADER: Shader = preload("res://shaders/pickup_aura.gdshader")
 
 @export var generate_school_collision: bool = true
 
@@ -125,6 +126,7 @@ var _room_entry_warning_lights_lit := true
 var _window_lurk_markers: Dictionary = {}
 var _item_markers: Dictionary = {}
 var _item_visuals: Dictionary = {}
+var _item_auras: Dictionary = {}
 var _item_visual_elapsed := 0.0
 var _item_minimap_dots: Dictionary = {}
 var _entrance_minimap_dot: Control
@@ -278,28 +280,27 @@ func _create_preview_items() -> void:
 		else:
 			push_warning("Pickup model not found for %s" % item["name"])
 		_item_visuals[item["id"]] = visual
-		var circle := MeshInstance3D.new()
-		circle.name = "TemporaryItemCircle"
-		var ring := TorusMesh.new()
-		ring.inner_radius = 0.26
-		ring.outer_radius = 0.36
-		circle.mesh = ring
-		circle.rotation_degrees.x = 90.0
-		circle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var material := StandardMaterial3D.new()
-		material.albedo_color = _preview_item_color(item["id"])
-		material.emission_enabled = true
-		material.emission = material.albedo_color * 0.45
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		circle.material_override = material
-		marker.add_child(circle)
+		var item_color := _preview_item_color(item["id"])
+		var aura := MeshInstance3D.new()
+		aura.name = "PickupAura"
+		var aura_mesh := PlaneMesh.new()
+		aura_mesh.size = Vector2(1.25, 1.25)
+		aura.mesh = aura_mesh
+		aura.position.y = 0.015
+		aura.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var aura_material := ShaderMaterial.new()
+		aura_material.shader = PICKUP_AURA_SHADER
+		aura_material.set_shader_parameter("aura_color", item_color)
+		aura.material_override = aura_material
+		marker.add_child(aura)
+		_item_auras[item["id"]] = aura
 		var label := Label3D.new()
 		label.name = "ItemName"
 		label.text = item["name"]
 		label.position.y = 1.3
 		label.font_size = 32
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.modulate = material.albedo_color
+		label.modulate = item_color
 		marker.add_child(label)
 		school.add_child(marker)
 		_item_markers[item["id"]] = marker
@@ -310,6 +311,13 @@ func _update_preview_item_visuals(delta: float) -> void:
 	_item_visual_elapsed += delta
 	for index in PREVIEW_ITEMS.size():
 		var item: Dictionary = PREVIEW_ITEMS[index]
+		var marker := _item_markers.get(item["id"]) as Node3D
+		if marker == null or not marker.visible:
+			continue
+		var aura := _item_auras.get(item["id"]) as Node3D
+		if aura != null:
+			var pulse := 1.0 + sin(_item_visual_elapsed * 2.2 + float(index) * 0.8) * 0.06
+			aura.scale = Vector3(pulse, 1.0, pulse)
 		var visual := _item_visuals.get(item["id"]) as Node3D
 		if visual == null or not visual.visible:
 			continue
