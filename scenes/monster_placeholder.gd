@@ -247,9 +247,14 @@ func begin_preview_brush_chase() -> void:
 
 func set_preview_brush_searchlight_direction(direction: Vector3) -> void:
 	direction.y = 0.0
+	if direction.length_squared() > 0.001:
+		direction = direction.normalized()
+		# The monster hangs upside down during the sweep, so its yaw uses the
+		# ceiling-facing forward vector while the searchlight points across the floor.
+		global_rotation = Vector3(PI, atan2(direction.x, direction.z), 0.0)
 	if direction.length_squared() > 0.001 and is_instance_valid(_glowing_face):
 		_glowing_face.visible = true
-		_glowing_face.global_basis = Basis.looking_at(direction.normalized(), Vector3.UP)
+		_glowing_face.global_basis = Basis.looking_at(direction, Vector3.UP)
 	_set_search_cone_visible(false)
 
 func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: Vector3, beyond_science: Vector3, beyond_a: Vector3, science_corner: Vector3, a_corner: Vector3) -> void:
