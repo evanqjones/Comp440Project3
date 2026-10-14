@@ -1177,6 +1177,7 @@ func _try_toggle_locker_hide() -> bool:
 		var spot: Dictionary = _locker_spots[_active_locker_index]
 		player.global_position = spot["outside"]
 		player.visible = _player_locker_return_visible
+		player.call("set_locker_camera_mode", false)
 		player.collision_layer = _player_locker_return_layer
 		player.collision_mask = _player_locker_return_mask
 		player.set_physics_process(true)
@@ -1193,7 +1194,7 @@ func _try_toggle_locker_hide() -> bool:
 	_player_locker_return_layer = player.collision_layer
 	_player_locker_return_mask = player.collision_mask
 	player.global_position = selected["inside"]
-	player.visible = false
+	player.call("set_locker_camera_mode", true)
 	player.collision_layer = 0
 	player.collision_mask = 0
 	player.set_physics_process(false)

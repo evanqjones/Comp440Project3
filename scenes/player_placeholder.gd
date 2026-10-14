@@ -33,6 +33,7 @@ var _standing_camera_height := 1.32
 var _standing_visual_height := 1.65
 var _interaction_target_id: StringName = &""
 var _pending_interaction_target_id: StringName = &""
+var _locker_camera_active := false
 
 func _ready() -> void:
     super._ready()
@@ -137,6 +138,20 @@ func set_input_enabled(enabled: bool) -> void:
         _interaction_target_id = &""
         if is_instance_valid(interaction_prompt):
             interaction_prompt.hide()
+
+func set_locker_camera_mode(enabled: bool) -> void:
+    if _locker_camera_active == enabled:
+        return
+    _locker_camera_active = enabled
+    var visual := $CapsuleVisual as MeshInstance3D
+    visual.visible = enabled
+    if enabled:
+        # Pull the view just behind the player and aim it back toward the body.
+        player_camera.position = Vector3(0.0, 0.08, 1.15)
+        player_camera.rotation = Vector3(-0.48, 0.0, 0.0)
+    else:
+        player_camera.position = Vector3.ZERO
+        player_camera.rotation = Vector3.ZERO
 
 func play_capture_and_respawn(checkpoint_id: StringName) -> void:
     if bool(get("capture_presentation_active")):
