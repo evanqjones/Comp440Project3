@@ -19,7 +19,6 @@ script = ExtResource("1_script")
 
 [node name="PlayerPlaceholder" parent="." instance=ExtResource("2_player")]
 scale = Vector3(0.8, 0.8, 0.8)
-camera_distance = 3.5
 
 [node name="MonsterPlaceholder" parent="." instance=ExtResource("3_monster")]
 
