@@ -298,6 +298,20 @@ func request_preview_ruler_hall_spawn(science_side: bool) -> void:
 	_preview_ruler_hall_spawn_position = _preview_ruler_hall_science_spawn if science_side else _preview_ruler_hall_a_spawn
 	_preview_ruler_hall_spawn_pending = true
 
+func restart_preview_ruler_hall_event() -> void:
+	if not _preview_ruler_hall_active:
+		return
+	var classroom_a_spawn := _preview_ruler_hall_a_spawn
+	var science_spawn := _preview_ruler_hall_science_spawn
+	var beyond_science := _preview_ruler_hall_end_science
+	var beyond_a := _preview_ruler_hall_end_a
+	var science_corner := _preview_ruler_hall_corner_science
+	var a_corner := _preview_ruler_hall_corner_a
+	begin_preview_ruler_hall_event(classroom_a_spawn, science_spawn, beyond_science, beyond_a, science_corner, a_corner)
+	global_position = classroom_a_spawn
+	_preview_ruler_hall_spawn_pending = false
+	_navigation_agent.target_position = _preview_ruler_hall_end_science
+
 func is_preview_ruler_hall_complete() -> bool:
 	return _preview_ruler_hall_complete
 

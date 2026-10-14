@@ -1399,6 +1399,18 @@ func _start_ruler_hall_event() -> void:
 	_active_preview_encounter = &"ruler_hall"
 	item_help.text = "Ruler collected | Monster approaching: hide in a hallway locker"
 
+func restart_ruler_hall_event_after_capture() -> void:
+	if not _ruler_hall_event_active:
+		return
+	monster.call("restart_preview_ruler_hall_event")
+	_ruler_hall_elapsed = 0.0
+	_ruler_hall_fallback_retry_elapsed = 0.0
+	_ruler_hall_fallback_pending = false
+	_ruler_hall_monster_at_science_end = false
+	_preview_relocation_elapsed = 0.0
+	_active_preview_encounter = &"ruler_hall"
+	item_help.text = "Caught! Ruler encounter restarted from the first hallway spawn"
+
 func _science_classroom_doorway_spawn(science_bounds: AABB) -> Vector3:
 	var best_position := Vector3(science_bounds.position.x + science_bounds.size.x * 0.08, science_bounds.end.y, science_bounds.end.z + 1.1)
 	var best_distance := INF
