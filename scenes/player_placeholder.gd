@@ -7,7 +7,6 @@ extends "res://scripts/player_system.gd"
 @export_range(1.0, 30.0, 0.5) var ground_acceleration: float = 16.0
 @export_range(5.0, 40.0, 0.5) var gravity_strength: float = 24.0
 @export_range(0.001, 0.01, 0.0005) var mouse_sensitivity: float = 0.003
-@export_range(2.0, 8.0, 0.1) var camera_distance: float = 4.3
 @export_range(-1.2, -0.05, 0.01) var camera_min_pitch: float = -0.85
 @export_range(0.05, 1.2, 0.01) var camera_max_pitch: float = 0.55
 
@@ -20,7 +19,7 @@ extends "res://scripts/player_system.gd"
 const PREVIEW_TARGET_ID_META: StringName = &"player_preview_target_id"
 
 @onready var camera_pivot: Node3D = $CameraPivot
-@onready var player_camera: Camera3D = $CameraPivot/SpringArm3D/Camera3D
+@onready var player_camera: Camera3D = $CameraPivot/Camera3D
 @onready var interaction_prompt: Label = $InteractionPrompt/Label
 @onready var capture_status: Label = $InteractionPrompt/CaptureStatus
 @onready var stamina_hud: CanvasLayer = $StaminaHUD
@@ -34,6 +33,7 @@ var _standing_camera_height := 1.32
 var _standing_visual_height := 1.65
 var _interaction_target_id: StringName = &""
 var _pending_interaction_target_id: StringName = &""
+var _locker_camera_active := false
 
 func _ready() -> void:
     super._ready()
@@ -44,8 +44,8 @@ func _ready() -> void:
     _standing_capsule_height = ($CollisionShape3D.shape as CapsuleShape3D).height
     _standing_camera_height = camera_pivot.position.y
     _standing_visual_height = ($CapsuleVisual.mesh as CapsuleMesh).height
-    camera_pivot.rotation.x = -0.2
-    $CameraPivot/SpringArm3D.spring_length = camera_distance
+    camera_pivot.rotation.x = 0.0
+    visual.visible = false
     player_camera.current = true
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     capture_status.visible = bool(get("capture_presentation_active"))
@@ -138,6 +138,20 @@ func set_input_enabled(enabled: bool) -> void:
         _interaction_target_id = &""
         if is_instance_valid(interaction_prompt):
             interaction_prompt.hide()
+
+func set_locker_camera_mode(enabled: bool) -> void:
+    if _locker_camera_active == enabled:
+        return
+    _locker_camera_active = enabled
+    var visual := $CapsuleVisual as MeshInstance3D
+    visual.visible = enabled
+    if enabled:
+        # Pull the view just behind the player and aim it back toward the body.
+        player_camera.position = Vector3(0.0, 0.08, 1.15)
+        player_camera.rotation = Vector3(-0.48, 0.0, 0.0)
+    else:
+        player_camera.position = Vector3.ZERO
+        player_camera.rotation = Vector3.ZERO
 
 func play_capture_and_respawn(checkpoint_id: StringName) -> void:
     if bool(get("capture_presentation_active")):

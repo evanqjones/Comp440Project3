@@ -133,6 +133,7 @@ func _create_sweeping_searchlight() -> void:
 	var beam := MeshInstance3D.new()
 	beam.name = "BrushGroundSearchlight"
 	beam.mesh = _make_searchlight_mesh()
+	beam.visible = false
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var material := StandardMaterial3D.new()
 	material.albedo_color = Color(1.0, 0.78, 0.12, 1.0)

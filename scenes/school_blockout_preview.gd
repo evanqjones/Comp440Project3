@@ -2,6 +2,7 @@ extends Node3D
 
 const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
 const LOCKER_MODEL: PackedScene = preload("res://assets/lockers.glb")
+const PICKUP_AURA_SHADER: Shader = preload("res://shaders/pickup_aura.gdshader")
 
 @export var generate_school_collision: bool = true
 
@@ -47,6 +48,17 @@ const PREVIEW_ITEMS: Array[Dictionary] = [
 	{"id": &"microphone", "name": "Microphone", "room": &"auditorium", "floor": "auditorium floor", "encounter": &"microphone", "u": 0.5, "v": 0.3},
 	{"id": &"front_door_key", "name": "Front Door Key", "room": &"storage_closet", "floor": "storage closet floor", "encounter": &"final_key", "u": 0.5, "v": 0.5}
 ]
+const PREVIEW_ITEM_MODELS: Dictionary = {
+	&"school_keys": preload("res://assets/pickup_school_keys.glb"),
+	&"weight": preload("res://assets/pickup_weight.glb"),
+	&"book": preload("res://assets/pickup_book.glb"),
+	&"brush": preload("res://assets/pickup_brush.glb"),
+	&"lab_coat": preload("res://assets/pickup_lab_coat.glb"),
+	&"ruler": preload("res://assets/pickup_ruler.glb"),
+	&"snack": preload("res://assets/pickup_snack.glb"),
+	&"microphone": preload("res://assets/pickup_microphone.glb"),
+	&"front_door_key": preload("res://assets/pickup_front_door_key.glb"),
+}
 const DEMO_REQUIRED_ITEMS: Array[StringName] = [
 	&"weight", &"book", &"brush", &"lab_coat", &"ruler", &"snack", &"microphone"
 ]
@@ -113,6 +125,9 @@ var _room_entry_warning_phase_remaining := 0.0
 var _room_entry_warning_lights_lit := true
 var _window_lurk_markers: Dictionary = {}
 var _item_markers: Dictionary = {}
+var _item_visuals: Dictionary = {}
+var _item_auras: Dictionary = {}
+var _item_visual_elapsed := 0.0
 var _item_minimap_dots: Dictionary = {}
 var _entrance_minimap_dot: Control
 var _item_minimap_map: Control
@@ -191,6 +206,7 @@ func _ready() -> void:
 	_apply_bell_debug_state()
 
 func _process(delta: float) -> void:
+	_update_preview_item_visuals(delta)
 	_update_fluorescent_flicker(delta)
 	_update_preview_item_encounter()
 	_update_locker_prompt()
@@ -254,32 +270,59 @@ func _create_preview_items() -> void:
 		marker.name = "PreviewItem_" + String(item["id"])
 		marker.position = position
 		marker.set_meta("item_id", item["id"])
-		var circle := MeshInstance3D.new()
-		circle.name = "TemporaryItemCircle"
-		var ring := TorusMesh.new()
-		ring.inner_radius = 0.26
-		ring.outer_radius = 0.36
-		circle.mesh = ring
-		circle.rotation_degrees.x = 90.0
-		circle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var material := StandardMaterial3D.new()
-		material.albedo_color = _preview_item_color(item["id"])
-		material.emission_enabled = true
-		material.emission = material.albedo_color * 0.45
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		circle.material_override = material
-		marker.add_child(circle)
+		var visual := Node3D.new()
+		visual.name = "PickupModel"
+		visual.position.y = 0.62
+		marker.add_child(visual)
+		var model_scene := PREVIEW_ITEM_MODELS.get(item["id"]) as PackedScene
+		if model_scene != null:
+			visual.add_child(model_scene.instantiate())
+		else:
+			push_warning("Pickup model not found for %s" % item["name"])
+		_item_visuals[item["id"]] = visual
+		var item_color := _preview_item_color(item["id"])
+		var aura := MeshInstance3D.new()
+		aura.name = "PickupAura"
+		var aura_mesh := PlaneMesh.new()
+		aura_mesh.size = Vector2(1.25, 1.25)
+		aura.mesh = aura_mesh
+		aura.position.y = 0.015
+		aura.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var aura_material := ShaderMaterial.new()
+		aura_material.shader = PICKUP_AURA_SHADER
+		aura_material.set_shader_parameter("aura_color", item_color)
+		aura.material_override = aura_material
+		marker.add_child(aura)
+		_item_auras[item["id"]] = aura
 		var label := Label3D.new()
 		label.name = "ItemName"
 		label.text = item["name"]
-		label.position.y = 0.3
+		label.position.y = 1.3
 		label.font_size = 32
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.modulate = material.albedo_color
+		label.modulate = item_color
 		marker.add_child(label)
 		school.add_child(marker)
 		_item_markers[item["id"]] = marker
 	_create_preview_item_minimap()
+
+
+func _update_preview_item_visuals(delta: float) -> void:
+	_item_visual_elapsed += delta
+	for index in PREVIEW_ITEMS.size():
+		var item: Dictionary = PREVIEW_ITEMS[index]
+		var marker := _item_markers.get(item["id"]) as Node3D
+		if marker == null or not marker.visible:
+			continue
+		var aura := _item_auras.get(item["id"]) as Node3D
+		if aura != null:
+			var pulse := 1.0 + sin(_item_visual_elapsed * 2.2 + float(index) * 0.8) * 0.06
+			aura.scale = Vector3(pulse, 1.0, pulse)
+		var visual := _item_visuals.get(item["id"]) as Node3D
+		if visual == null or not visual.visible:
+			continue
+		visual.position.y = 0.62 + sin(_item_visual_elapsed * 2.2 + float(index) * 0.8) * 0.12
+		visual.rotation.y = wrapf(visual.rotation.y + delta * 0.85, 0.0, TAU)
 
 func _create_preview_item_minimap() -> void:
 	var floor_entries: Array[Dictionary] = []
@@ -1177,6 +1220,7 @@ func _try_toggle_locker_hide() -> bool:
 		var spot: Dictionary = _locker_spots[_active_locker_index]
 		player.global_position = spot["outside"]
 		player.visible = _player_locker_return_visible
+		player.call("set_locker_camera_mode", false)
 		player.collision_layer = _player_locker_return_layer
 		player.collision_mask = _player_locker_return_mask
 		player.set_physics_process(true)
@@ -1193,7 +1237,7 @@ func _try_toggle_locker_hide() -> bool:
 	_player_locker_return_layer = player.collision_layer
 	_player_locker_return_mask = player.collision_mask
 	player.global_position = selected["inside"]
-	player.visible = false
+	player.call("set_locker_camera_mode", true)
 	player.collision_layer = 0
 	player.collision_mask = 0
 	player.set_physics_process(false)
