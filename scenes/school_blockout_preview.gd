@@ -1,6 +1,7 @@
 extends Node3D
 
 const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
+const LOCKER_MODEL: PackedScene = preload("res://assets/lockers.glb")
 
 @export var generate_school_collision: bool = true
 
@@ -104,6 +105,12 @@ var _bell_item_door_locks: Dictionary = {}
 var _active_safe_room_ids: Array[StringName] = []
 var _safe_room_lights: Dictionary = {}
 var _fluorescent_fixtures: Array[Dictionary] = []
+var _room_entry_warning_item: StringName = &""
+var _room_entry_warning_room: StringName = &""
+var _room_entry_warning_bounds := AABB()
+var _room_entry_warning_remaining := 0.0
+var _room_entry_warning_phase_remaining := 0.0
+var _room_entry_warning_lights_lit := true
 var _window_lurk_markers: Dictionary = {}
 var _item_markers: Dictionary = {}
 var _item_minimap_dots: Dictionary = {}
@@ -115,6 +122,7 @@ var _collected_preview_items: Dictionary = {}
 var _item_room_bounds: Dictionary = {}
 var _active_preview_encounter: StringName = &""
 var _final_bell_started := false
+var _final_exit_chase_started := false
 var _bell_hall_spawn_pending := false
 var _final_exit_door: Node3D
 var _final_exit_door_slammed := false
@@ -148,6 +156,7 @@ func _ready() -> void:
 	_create_cafeteria_tables()
 	_create_school_doors()
 	_create_ruler_hallway_lockers()
+	_register_placed_locker_spots(school)
 	_build_school_navigation()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -161,6 +170,7 @@ func _ready() -> void:
 	_place_player_at_nurse_office()
 	_place_monster_deeper_in_hallway()
 	monster.set_player_target(player)
+	monster.preview_final_bell_chase_started.connect(_on_preview_final_bell_chase_started)
 	player.noise_emitted.connect(monster.receive_noise)
 	monster.noise_relocation_requested.connect(_relocate_nearest_spawn_to_noise)
 	_auditorium_encounter = AUDITORIUM_ENCOUNTER_SCRIPT.new()
@@ -506,6 +516,8 @@ func _update_preview_item_encounter() -> void:
 	var player_in_science := science_bounds.size != Vector3.ZERO and _point_inside_room(player.global_position, science_bounds)
 	if player_in_science and not _collected_preview_items.has(&"lab_coat") and (not demo_progression_rules_enabled or _demo_item_available(&"lab_coat")):
 		if not _science_encounter_started:
+			if _room_entry_warning_item != &"science_classroom":
+				_start_room_entry_warning(&"science_classroom", &"science_classroom", science_bounds)
 			_science_encounter_started = true
 			_science_spawn_pending = true
 		_active_preview_encounter = &"science_classroom"
@@ -529,6 +541,8 @@ func _update_preview_item_encounter() -> void:
 			current_item = item
 			break
 	if current_item.is_empty():
+		if _room_entry_warning_item != &"":
+			_cancel_room_entry_warning()
 		if _science_encounter_started:
 			var lab_bounds: AABB = _item_room_bounds.get(&"lab_room", AABB())
 			var player_in_lab := lab_bounds.size != Vector3.ZERO and _point_inside_room(player.global_position, lab_bounds)
@@ -544,6 +558,10 @@ func _update_preview_item_encounter() -> void:
 		return
 	var encounter: StringName = current_item["encounter"]
 	if _active_preview_encounter != encounter:
+		var item_id: StringName = current_item["id"]
+		var warning_room: StringName = current_item["room"]
+		if _room_entry_warning_item != item_id:
+			_start_room_entry_warning(item_id, warning_room, _item_room_bounds[warning_room])
 		_active_preview_encounter = encounter
 		var bounds: AABB = _item_room_bounds[current_item["room"]]
 		var marker := _item_markers[current_item["id"]] as Node3D
@@ -842,16 +860,10 @@ func _try_collect_preview_item() -> bool:
 func _start_final_key_bell() -> void:
 	_science_window_spawn_pending = false
 	_final_exit_door_slammed = false
+	_final_exit_chase_started = false
 	_final_exit_door = _find_school_entrance_door()
 	if is_instance_valid(_final_exit_door):
-		_final_exit_door.call("set_interaction_locked", false)
-		var lobby_floor := _find_room_floor(school, "lobby floor")
-		var opening_side := Vector3.ZERO
-		if lobby_floor != null and lobby_floor.mesh != null:
-			var lobby_bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
-			opening_side = lobby_bounds.get_center() - _final_exit_door.global_position
-			opening_side.y = 0.0
-		_final_exit_door.call("open_for_escape", opening_side)
+		_final_exit_door.call("set_interaction_locked", true)
 	else:
 		push_warning("Final key collected, but the entrance door could not be found.")
 	_final_bell_started = true
@@ -882,7 +894,21 @@ func _start_final_key_bell() -> void:
 		monster.set_physics_process(true)
 	monster.call("begin_preview_final_bell_chase")
 	bell_status.text = "FINAL BELL: ON | Escape to the entrance"
-	item_help.text = "Front Door Key collected | The monster enters from the Storage Closet | 5 seconds, then run to the entrance"
+	item_help.text = "Front Door Key collected | The entrance unlocks when the final chase begins"
+
+func _on_preview_final_bell_chase_started() -> void:
+	if not _final_bell_started or _final_exit_door_slammed or not is_instance_valid(_final_exit_door):
+		return
+	_final_exit_chase_started = true
+	var lobby_floor := _find_room_floor(school, "lobby floor")
+	var opening_side := Vector3.ZERO
+	if lobby_floor != null and lobby_floor.mesh != null:
+		var lobby_bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
+		opening_side = lobby_bounds.get_center() - _final_exit_door.global_position
+		opening_side.y = 0.0
+	_final_exit_door.call("set_interaction_locked", false)
+	_final_exit_door.call("open_for_escape", opening_side)
+	item_help.text = "Final chase started | Run to the entrance"
 
 func _final_key_monster_spawn(room_bounds: AABB) -> Vector3:
 	var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
@@ -1045,10 +1071,7 @@ func _create_locker_placeholders() -> void:
 		var width := 0.82
 		var depth := 0.78
 		var height := 2.05
-		_add_locker_panel(locker, Vector3(-face_inward * depth * 0.42, height * 0.5, 0.0), Vector3(0.12, height, width), Color(0.25, 0.34, 0.42))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, -width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height, 0.0), Vector3(depth, 0.1, width), Color(0.36, 0.46, 0.54))
+		_add_locker_model(locker, false, Vector3(face_inward, 0.0, 0.0), width, depth, height)
 		_locker_spots.append({"node": locker, "inside": center + Vector3(face_inward * depth * 0.15, 0.0, 0.0), "outside": center + Vector3(face_inward * (depth + 0.72), 0.0, 0.0), "normal": Vector3(face_inward, 0.0, 0.0), "hallway": false})
 
 func _create_ruler_hallway_lockers() -> void:
@@ -1069,35 +1092,69 @@ func _create_ruler_hallway_lockers() -> void:
 	_ruler_hall_locker_z_max = last_z + width * 0.5
 	for index in range(6):
 		var center := Vector3(wall_x, bounds.end.y, lerpf(first_z, last_z, float(index) / 5.0))
+		var locker := school.find_child("RulerHallLocker_%02d" % (index + 1), true, false) as Node3D
+		if locker == null:
+			locker = Node3D.new()
+			locker.name = "RulerHallLocker_%02d" % (index + 1)
+			locker.position = center
+			school.add_child(locker)
+			_add_locker_model(locker, true, Vector3(-1.0, 0.0, 0.0), width, depth, height)
+		else:
+			center = locker.global_position
+			_add_locker_collision(locker, width, depth, height)
 		var face_inward := -1.0
-		var locker := Node3D.new()
-		locker.name = "RulerHallLocker_%02d" % (index + 1)
-		locker.position = center
-		school.add_child(locker)
-		_add_locker_panel(locker, Vector3(-face_inward * depth * 0.42, height * 0.5, 0.0), Vector3(0.12, height, width), Color(0.25, 0.34, 0.42))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, -width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height * 0.5, width * 0.5), Vector3(depth, height, 0.1), Color(0.31, 0.41, 0.49))
-		_add_locker_panel(locker, Vector3(face_inward * depth * 0.5, height, 0.0), Vector3(depth, 0.1, width), Color(0.36, 0.46, 0.54))
 		_locker_spots.append({"node": locker, "inside": center + Vector3(face_inward * depth * 0.15, 0.0, 0.0), "outside": center + Vector3(face_inward * (depth + 0.72), 0.0, 0.0), "normal": Vector3(face_inward, 0.0, 0.0), "hallway": true})
 
-func _add_locker_panel(parent: Node3D, local_position: Vector3, size: Vector3, color: Color) -> void:
-	var panel := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = size
-	panel.mesh = box
-	panel.position = local_position
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.8
-	panel.material_override = material
-	parent.add_child(panel)
+func _register_placed_locker_spots(node: Node) -> void:
+	for child in node.get_children():
+		if child is Node3D and String(child.name).begins_with("Locker Placement "):
+			var locker := child as Node3D
+			var width := 0.82
+			var depth := 0.78
+			var height := 2.05
+			if locker.find_child("LockerInteractionCollision", true, false) == null:
+				_add_locker_collision(locker, width, depth, height)
+			var center := locker.global_position
+			var face := (locker.global_basis * Vector3.RIGHT).normalized()
+			if face.length_squared() < 0.5:
+				face = Vector3.FORWARD
+			_locker_spots.append({
+				"node": locker,
+				"inside": center + face * (depth * 0.15),
+				"outside": center + face * (depth * 0.5 + 0.72),
+				"normal": face,
+				"hallway": true
+			})
+		else:
+			_register_placed_locker_spots(child)
+
+func _add_locker_model(parent: Node3D, hallway: bool, face_direction: Vector3, width: float, depth: float, height: float) -> void:
+	var model := LOCKER_MODEL.instantiate() as Node3D
+	if model == null:
+		push_warning("Could not instance the detailed locker model.")
+		return
+	model.name = "DetailedLockerModel"
+	parent.rotation.y = atan2(-face_direction.z, face_direction.x)
+	parent.add_child(model)
+	var single_variant := model.find_child("School Locker Single", true, false) as Node3D
+	var bank_variant := model.find_child("School Locker Hall Bank", true, false) as Node3D
+	if single_variant == null or bank_variant == null:
+		push_warning("Locker GLB is missing its single or hallway bank variant.")
+	else:
+		single_variant.visible = not hallway
+		bank_variant.visible = hallway
+	_add_locker_collision(parent, width, depth, height)
+
+func _add_locker_collision(parent: Node3D, width: float, depth: float, height: float) -> void:
 	var body := StaticBody3D.new()
+	body.name = "LockerInteractionCollision"
 	body.collision_layer = 1
 	body.collision_mask = 1
-	panel.add_child(body)
+	parent.add_child(body)
+	body.position.y = height * 0.5
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = size
+	shape.size = Vector3(depth, height, width)
 	collision.shape = shape
 	body.add_child(collision)
 
@@ -1217,10 +1274,13 @@ func _refresh_demo_door_locks() -> void:
 		return
 	var has_school_keys := _collected_preview_items.has(&"school_keys")
 	var storage_unlocked := _demo_all_required_items_collected()
+	var entrance_door := _find_school_entrance_door()
 	for door in get_tree().get_nodes_in_group("preview_school_doors"):
 		var door_id := String(door.get("door_id")).to_lower()
 		var progression_locked := false
-		if door_id.contains("storage"):
+		if door == entrance_door and not _final_exit_chase_started:
+			progression_locked = true
+		elif door_id.contains("storage"):
 			progression_locked = not storage_unlocked
 		elif not has_school_keys:
 			progression_locked = not _demo_is_nurse_office_main_office_door(door_id, door.global_position)
@@ -1776,6 +1836,9 @@ func _create_school_doors() -> void:
 		door.open_state_changed.connect(_on_preview_door_state_changed)
 		door.add_to_group("preview_school_doors")
 		school.add_child(door)
+	var entrance_door := _find_school_entrance_door()
+	if is_instance_valid(entrance_door):
+		entrance_door.call("set_interaction_locked", true)
 	print("Preview doors created: %d" % centers.size())
 
 func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
@@ -2050,6 +2113,7 @@ func _load_school_model() -> void:
 		(model as Node3D).visible = true
 	_restore_school_roof_visibility(model)
 	_hide_imported_door_markers(model)
+	_disable_imported_star_shadows(model)
 	school.add_child(model)
 	_add_fluorescent_runtime_lights(model)
 
@@ -2109,8 +2173,72 @@ func _sync_fluorescent_lights() -> void:
 		fixture_data["flicker_timer"] = randf_range(3.0, 16.0)
 		_set_fluorescent_fixture_lit(fixture_data, fixture_should_be_lit)
 
-func _update_fluorescent_flicker(delta: float) -> void:
+func _start_room_entry_warning(item_id: StringName, room_id: StringName, room_bounds: AABB) -> void:
+	if _room_entry_warning_item != "":
+		_cancel_room_entry_warning()
+	_room_entry_warning_item = item_id
+	_room_entry_warning_room = room_id
+	_room_entry_warning_bounds = room_bounds
+	_room_entry_warning_remaining = 0.85
+	_room_entry_warning_phase_remaining = 0.0
+	_room_entry_warning_lights_lit = true
+	_set_entry_warning_room_lights(true)
+
+func _cancel_room_entry_warning() -> void:
+	if _room_entry_warning_item == "":
+		return
+	_set_entry_warning_room_lights(true)
+	_room_entry_warning_item = &""
+	_room_entry_warning_room = &""
+	_room_entry_warning_bounds = AABB()
+	_room_entry_warning_remaining = 0.0
+	_room_entry_warning_phase_remaining = 0.0
+
+func _finish_room_entry_warning() -> void:
+	_set_entry_warning_room_lights(true)
 	for fixture_data in _fluorescent_fixtures:
+		if _entry_warning_matches_fixture(fixture_data):
+			fixture_data["flicker_off"] = false
+			fixture_data["flicker_off_timer"] = 0.0
+			fixture_data["flicker_timer"] = randf_range(3.0, 16.0)
+	_room_entry_warning_item = &""
+	_room_entry_warning_room = &""
+	_room_entry_warning_bounds = AABB()
+	_room_entry_warning_remaining = 0.0
+	_room_entry_warning_phase_remaining = 0.0
+
+func _entry_warning_matches_fixture(fixture_data: Dictionary) -> bool:
+	if StringName(fixture_data["room_id"]) == _room_entry_warning_room:
+		return true
+	var lamp := fixture_data["lamp"] as OmniLight3D
+	if not is_instance_valid(lamp) or _room_entry_warning_bounds.size == Vector3.ZERO:
+		return false
+	var position := lamp.global_position
+	return (
+		position.x >= _room_entry_warning_bounds.position.x - 0.1
+		and position.x <= _room_entry_warning_bounds.end.x + 0.1
+		and position.z >= _room_entry_warning_bounds.position.z - 0.1
+		and position.z <= _room_entry_warning_bounds.end.z + 0.1
+	)
+
+func _set_entry_warning_room_lights(should_be_lit: bool) -> void:
+	for fixture_data in _fluorescent_fixtures:
+		if _entry_warning_matches_fixture(fixture_data):
+			_set_fluorescent_fixture_lit(fixture_data, should_be_lit)
+
+func _update_fluorescent_flicker(delta: float) -> void:
+	if _room_entry_warning_item != "":
+		_room_entry_warning_remaining = maxf(0.0, _room_entry_warning_remaining - delta)
+		_room_entry_warning_phase_remaining -= delta
+		if _room_entry_warning_phase_remaining <= 0.0:
+			_room_entry_warning_lights_lit = not _room_entry_warning_lights_lit
+			_room_entry_warning_phase_remaining = randf_range(0.08, 0.19)
+			_set_entry_warning_room_lights(_room_entry_warning_lights_lit)
+		if _room_entry_warning_remaining == 0.0:
+			_finish_room_entry_warning()
+	for fixture_data in _fluorescent_fixtures:
+		if _room_entry_warning_item != "" and _entry_warning_matches_fixture(fixture_data):
+			continue
 		# During Bell phases, safe-room fluorescent fixtures remain continuously lit.
 		# Every other fixture is deliberately dark for the whole phase.
 		if _bell_debug_active:
@@ -2150,6 +2278,12 @@ func _hide_imported_door_markers(node: Node) -> void:
 	for child in node.get_children():
 		_hide_imported_door_markers(child)
 
+func _disable_imported_star_shadows(node: Node) -> void:
+	if node is GeometryInstance3D and String(node.name).to_lower().contains("star dots"):
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for child in node.get_children():
+		_disable_imported_star_shadows(child)
+
 func _add_school_collisions(node: Node) -> void:
 	if node is MeshInstance3D and node.mesh != null and not bool(node.get_meta("preview_collision_disabled", false)):
 		var lower_name: String = node.name.to_lower()
@@ -2157,7 +2291,8 @@ func _add_school_collisions(node: Node) -> void:
 			lower_name.contains("auditorium encounter stage")
 			or lower_name.contains("auditorium encounter chair") and lower_name.contains("back")
 		)
-		if lower_name.contains("wall") or lower_name.contains("floor") or lower_name.contains("roof") or auditorium_encounter_collider:
+		var bookshelf_collider := lower_name.contains("bookshelf maze")
+		if lower_name.contains("wall") or lower_name.contains("floor") or lower_name.contains("roof") or auditorium_encounter_collider or bookshelf_collider:
 			var shape: Shape3D = node.mesh.create_trimesh_shape()
 			if shape != null:
 				var body := StaticBody3D.new()
