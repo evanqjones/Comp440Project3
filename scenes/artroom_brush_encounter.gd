@@ -13,6 +13,7 @@ var _sweep_pivot: Node3D
 var _room_bounds := AABB()
 var _player: Node3D
 var _chase_started := false
+var _ceiling_height := 0.0
 
 
 func configure(monster: CharacterBody3D, player: Node3D) -> void:
@@ -26,6 +27,7 @@ func begin_brush_escape(room_bounds: AABB, ceiling_height: float) -> void:
 	_active = true
 	_chase_started = false
 	_room_bounds = room_bounds
+	_ceiling_height = ceiling_height
 	_original_position = _monster.global_position
 	_original_rotation = _monster.global_rotation
 	_original_collision_layer = _monster.collision_layer
@@ -34,16 +36,36 @@ func begin_brush_escape(room_bounds: AABB, ceiling_height: float) -> void:
 	_monster.velocity = Vector3.ZERO
 	_monster.collision_layer = 0
 	_monster.collision_mask = 0
+	_place_monster_for_search()
+	_create_sweeping_searchlight()
+
+
+func restart_after_capture() -> void:
+	if not _active or not is_instance_valid(_monster):
+		return
+	if is_instance_valid(_sweep_pivot):
+		_sweep_pivot.queue_free()
+	_sweep_pivot = null
+	_chase_started = false
+	_monster.set_physics_process(false)
+	_monster.velocity = Vector3.ZERO
+	_monster.collision_layer = 0
+	_monster.collision_mask = 0
+	_place_monster_for_search()
+	_create_sweeping_searchlight()
+
+
+func _place_monster_for_search() -> void:
 	_monster.global_position = Vector3(
-		room_bounds.position.x + room_bounds.size.x * 0.5,
-		ceiling_height,
-		room_bounds.position.z + room_bounds.size.z * 0.5
+		_room_bounds.position.x + _room_bounds.size.x * 0.5,
+		_ceiling_height,
+		_room_bounds.position.z + _room_bounds.size.z * 0.5
 	)
 	_monster.rotation = Vector3(PI, 0.0, 0.0)
+	_monster.call("set_preview_brush_searchlight_direction", Vector3.FORWARD)
 	var cone := _monster.get_node_or_null("OpaqueSearchCone") as MeshInstance3D
 	if is_instance_valid(cone):
 		cone.visible = false
-	_create_sweeping_searchlight()
 
 
 func finish_brush_escape() -> void:
@@ -70,6 +92,7 @@ func _physics_process(delta: float) -> void:
 		-TAU,
 		TAU
 	)
+	_monster.call("set_preview_brush_searchlight_direction", -_sweep_pivot.global_basis.z)
 	if _player_in_sweeping_light():
 		_chase_started = true
 		_sweep_pivot.visible = false

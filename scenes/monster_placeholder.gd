@@ -231,6 +231,8 @@ func begin_preview_brush_chase() -> void:
 	if not is_instance_valid(_player_target):
 		return
 	_preview_brush_chase_active = true
+	_glowing_face.visible = true
+	_set_search_cone_visible(false)
 	_preview_item_encounter = &"brush"
 	_preview_player_hidden = false
 	visible = true
@@ -241,6 +243,14 @@ func begin_preview_brush_chase() -> void:
 	velocity = Vector3.ZERO
 	set_physics_process(true)
 	_set_state(&"SHORT_CHASE")
+
+
+func set_preview_brush_searchlight_direction(direction: Vector3) -> void:
+	direction.y = 0.0
+	if direction.length_squared() > 0.001 and is_instance_valid(_glowing_face):
+		_glowing_face.visible = true
+		_glowing_face.global_basis = Basis.looking_at(direction.normalized(), Vector3.UP)
+	_set_search_cone_visible(false)
 
 func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: Vector3, beyond_science: Vector3, beyond_a: Vector3, science_corner: Vector3, a_corner: Vector3) -> void:
 	_preview_window_stalk_active = false

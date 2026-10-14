@@ -148,7 +148,7 @@ func _update_demo_capture_and_respawn(delta: float) -> void:
 func _begin_demo_capture_respawn() -> void:
 	_demo_capture_was_final_chase = _final_bell_started
 	_demo_capture_interaction = &""
-	if _active_preview_encounter in [&"ruler_hall", &"microphone", &"microphone_escape"]:
+	if _active_preview_encounter in [&"ruler_hall", &"microphone", &"microphone_escape", &"brush_escape"]:
 		_demo_capture_interaction = _active_preview_encounter
 	if _demo_capture_was_final_chase and not _demo_final_chase_positions_saved:
 		_demo_final_chase_positions_saved = true
@@ -193,6 +193,9 @@ func _finish_demo_capture_respawn() -> void:
 				_microphone_escape_finish_started = false
 				_auditorium_encounter.call("restart_after_capture", true)
 				item_help.text = "Caught! Microphone chase restarted at the stage"
+			&"brush_escape":
+				restart_artroom_brush_escape_after_capture()
+				item_help.text = "Caught! Paintbrush encounter restarted in the Artroom"
 			_:
 				_try_debug_offscreen_relocation()
 				item_help.text = "Respawned at your last collected item"

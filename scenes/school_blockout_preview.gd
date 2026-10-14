@@ -1023,6 +1023,14 @@ func _start_artroom_brush_escape() -> void:
 	item_help.text = "The ceiling searchlight is sweeping the Artroom | Escape through the Bathroom door"
 
 
+func restart_artroom_brush_escape_after_capture() -> void:
+	if not is_instance_valid(_artroom_brush_encounter):
+		return
+	_brush_escape_active = true
+	_active_preview_encounter = &"brush_escape"
+	_artroom_brush_encounter.call("restart_after_capture")
+
+
 func _find_artroom_hallway_door(room_bounds: AABB) -> Node3D:
 	var room_center := Vector3(room_bounds.position.x + room_bounds.size.x * 0.5, room_bounds.position.y, room_bounds.position.z + room_bounds.size.z * 0.5)
 	var best_door: Node3D
