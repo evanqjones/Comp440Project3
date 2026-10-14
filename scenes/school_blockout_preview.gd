@@ -13,7 +13,7 @@ const PICKUP_AURA_SHADER: Shader = preload("res://shaders/pickup_aura.gdshader")
 @onready var preview_light: DirectionalLight3D = $PreviewLight
 @onready var bell_status: Label = $DebugOverlay/BellStatus
 @onready var spawn_help: Label = $DebugOverlay/SpawnHelp
-@onready var item_help: Label = $DebugOverlay/ItemHelp
+@onready var item_help: Label = $DebugOverlay/ObjectiveNote/NoteContent/ItemHelp
 var _character_interaction_prompt: Label3D
 
 const NORMAL_BACKGROUND := Color(0.012, 0.022, 0.065, 1.0)
