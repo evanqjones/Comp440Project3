@@ -125,3 +125,8 @@ func _publish(active: bool) -> void:
 
 func _positive(value: float, fallback: float) -> float:
 	return maxf(0.05, value) if is_finite(value) else fallback
+
+func start_guaranteed_bell() -> void:
+	_running = true
+	_remaining = _positive(bell_duration, 10.0)
+	_publish(true)

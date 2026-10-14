@@ -11,8 +11,12 @@ config_version=5
 [application]
 
 config/name="Comp440Project3"
-run/main_scene="res://scenes/after_school.tscn"
+run/main_scene="res://scenes/demo_scene.tscn"
 config/features=PackedStringArray("4.7")
+
+[autoload]
+
+GameSceneToggle="*res://scripts/game_scene_toggle.gd"
 
 [filesystem]
 

@@ -6,10 +6,10 @@
 
 [sub_resource type="Environment" id="Environment_preview"]
 background_mode = 1
-background_color = Color(0.055, 0.07, 0.1, 1)
-ambient_light_source = 3
-ambient_light_color = Color(0.55, 0.62, 0.75, 1)
-ambient_light_energy = 0.8
+background_color = Color(0.012, 0.022, 0.065, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.13, 0.17, 0.29, 1)
+ambient_light_energy = 0.42
 
 [node name="SchoolBlockoutPreview" type="Node3D"]
 script = ExtResource("1_script")
@@ -27,7 +27,9 @@ environment = SubResource("Environment_preview")
 
 [node name="PreviewLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-48, -25, 0)
-light_energy = 1.2
+light_color = Color(0.23, 0.34, 0.68, 1)
+light_energy = 0.32
+shadow_enabled = true
 
 [node name="DebugOverlay" type="CanvasLayer" parent="."]
 

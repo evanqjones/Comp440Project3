@@ -36,15 +36,19 @@ func _ready() -> void:
 	bell_status.hide()
 	spawn_help.hide()
 	item_help.hide()
-	bell = SchoolBell.new()
-	bell.name = "SchoolBell"
+	bell = get_node_or_null("SchoolBell") as SchoolBell
+	var existing_bell := bell != null
+	if not existing_bell:
+		bell = SchoolBell.new()
+		bell.name = "SchoolBell"
 	bell.auto_start = false
 	bell.minimum_interval = bell_interval_min
 	bell.maximum_interval = bell_interval_max
 	bell.bell_duration = bell_seconds
 	bell.completed_interval_multiplier = completed_bell_interval_multiplier
 	bell.objectives_for_maximum_pressure = PREVIEW_ITEMS.size() - 2
-	add_child(bell)
+	if not existing_bell:
+		add_child(bell)
 	bell.bell_state_changed.connect(_on_school_bell_changed)
 	_bell_audio = AudioStreamPlayer.new()
 	_bell_audio.name = "SchoolBellAudio"
@@ -57,7 +61,9 @@ func _ready() -> void:
 	if is_instance_valid(_final_exit_door):
 		_final_exit_door.set_interaction_locked(true)
 	school_ready = true
-	bell.start_scheduling()
+	# The team demo unlocks scheduling through its own objective progression.
+	if not demo_progression_rules_enabled:
+		bell.start_scheduling()
 	set_process(true)
 	_update_school_status()
 
@@ -133,6 +139,7 @@ func _on_school_bell_changed(snapshot: SchoolBell.BellSnapshot) -> void:
 	_bell_debug_active = snapshot.active
 	_bell_hall_spawn_pending = false
 	preview_environment.environment.background_color = BELL_BACKGROUND if snapshot.active else NORMAL_BACKGROUND
+	preview_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	preview_environment.environment.ambient_light_color = BELL_AMBIENT if snapshot.active else NORMAL_AMBIENT
 	preview_light.light_color = Color(1.0, 0.12, 0.16) if snapshot.active else Color.WHITE
 	for light in _room_lights:
@@ -145,6 +152,8 @@ func _on_school_bell_changed(snapshot: SchoolBell.BellSnapshot) -> void:
 			light.queue_free()
 		_safe_room_lights.clear()
 	_sync_safe_room_door_links()
+	_sync_fluorescent_lights()
+	_set_demo_bell_item_door_locks(snapshot.active and not snapshot.final_escape)
 	monster.set_safe_rooms(_active_safe_room_ids)
 	if not snapshot.final_escape:
 		# Start where the entity actually is. Never use the preview hallway teleport.
@@ -224,6 +233,12 @@ func get_door_state(door_id: StringName) -> int:
 			return 1 if _door_open_states.get(door_id, false) else 0
 	return -1
 
+func _refresh_demo_door_locks() -> void:
+	super._refresh_demo_door_locks()
+	# General progression updates must not unlock the final exit early.
+	if is_instance_valid(_final_exit_door) and not _final_bell_started:
+		_final_exit_door.set_interaction_locked(true)
+
 func _on_preview_door_state_changed(door_id: StringName, is_open: bool) -> void:
 	_door_open_states[door_id] = is_open
 	super._on_preview_door_state_changed(door_id, is_open)
@@ -266,7 +281,7 @@ func _create_school_status() -> void:
 	var layout := VBoxContainer.new()
 	margin.add_child(layout)
 	var title := Label.new()
-	title.text = "AFTER SCHOOL  |  School_System"
+	title.text = "AFTER SCHOOL" if demo_progression_rules_enabled else "AFTER SCHOOL  |  School_System"
 	title.add_theme_font_size_override("font_size", 20)
 	layout.add_child(title)
 	_room_label = Label.new()
@@ -275,7 +290,7 @@ func _create_school_status() -> void:
 	_objective_label.add_theme_color_override("font_color", Color(1, 0.85, 0.5))
 	layout.add_child(_objective_label)
 	var controls := Label.new()
-	controls.text = "WASD move   Shift run   Ctrl crouch   E collect / hide   Esc mouse"
+	controls.text = "WASD move   Shift run   Space sneak   E collect / hide   Esc mouse"
 	controls.add_theme_font_size_override("font_size", 13)
 	layout.add_child(controls)
 

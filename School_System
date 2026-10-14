@@ -1,43 +1,44 @@
-# After School — playable School_System branch
+# After School — School_System integration
 
-## Play the combined game
+## Play the main game
 
-1. Check out **School_System** and pull it from GitHub.
-2. Open this repository's **project.godot** in Godot 4.7.2.
-3. Press **F5 (Run Project)**. Use F5, not F6 on an old demo tab.
-4. Look for **AFTER SCHOOL | School_System**, **Nurse Office**, and **Belongings 0 / 7**.
+Open `project.godot` and press **F5**. The default is the team's `scenes/demo_scene.tscn`, now including School features. Stop with F8 and run again after edits.
 
-The default scene is now `scenes/after_school.tscn`. It contains the team's larger building, current Player and Monster, all seven belonging encounters, and both keys. Main Office keys are the first objective. WASD moves, mouse looks, Shift runs, Ctrl crouches, E collects/hides, and Esc releases the mouse. Doors retain the team's automatic push-open behavior and special encounter closures. Recover the belongings and School Keys before collecting the Front Door Key, then leave through the front entrance. Press R after victory to replay.
+The bottom-center toggle is available during play: **F2** switches between the integrated demo and the standalone School scene (`scenes/after_school.tscn`). Alternatively, hold **Tab** to release the mouse and click the button. Switching starts a fresh run; progress does not transfer.
 
-![Integrated School_System start](school_integrated.png)
+Controls: WASD move, mouse look, Shift sprint, Space sneak, E interact, Esc release mouse. R restarts after victory.
 
-## School features connected to the team game
+## Features in the demo
 
-- Automatic unpredictable bells: provisional 30–60 second quiet intervals and 10-second chases. Seven recovered belongings reduce future interval bounds toward 15–30 seconds. No timer or monster-location debug information is displayed.
-- Existing authored room encounters reserve their sequence: the quiet-phase clock pauses during them, then resumes. A timed Bell takes priority over new room encounters and pickups, preventing encounter setup from teleporting the Monster mid-chase.
-- Automatic chases begin at the Monster's current location using its existing public Bell API. The team's final storage-closet setup and trailing escape chase are preserved.
-- School Bell sound uses an original procedural placeholder tone. Audio, red lighting, safe-room lights, and Monster mode follow the same Bell transition. Normal lighting uses subdued blue ambient and warm room lights.
-- Existing three-room safe selection and navigation exclusions are retained. The integrated Bell snapshot publishes those room IDs.
-- Real pickups drive pacing and visible progress. The front key cannot skip the other objectives; leaving after the final key stops the Bell/audio and shows completion.
-- Full-building room lookup chooses the smallest containing room, so large overlapping lobby slabs do not hide the Nurse/Main Office. School exposes room IDs, door states, objective snapshots, stalking candidates, and reachable navigation paths.
+- One shared School Bell scheduler, with configurable 30–60 second quiet intervals and 10-second chases. Belongings shorten intervals toward 15–30 seconds; access keys do not count as belongings.
+- The demo retains its School Keys unlock, hidden initial Monster, progression-triggered scheduling, six/seven-item guaranteed Bells, and capture/checkpoint respawns.
+- Quiet Bell time pauses during authored encounters without rerolling. Active Bells block new pickups and encounter relocation. Regular Bell chases begin at the Monster's actual location.
+- Procedural Bell audio, red Bell lighting, warm room lights, fluorescent transitions, safe-room lighting and navigation exclusions share the same Bell state. The demo retains its five safe rooms; the standalone School scene retains three.
+- Current room and belongings progress appear in the HUD. Existing objective minimap and encounter/respawn hints remain available. Debug spawn markers and Bell countdowns remain hidden.
+- All belongings and School Keys are required for the Front Door Key. General door updates cannot unlock the exit early. The final Bell persists through final-chase respawns until the player exits; victory stops audio and gameplay and offers replay.
+- Room lookup, door state, objective snapshots, active safe rooms, stalking locations, and traversable paths are exposed by the shared School integration.
+- The packaged team school model works on desktop and Web without requiring Blender import.
 
-Implementation is in `scripts/school/school_game.gd`, an integration extension of the team's scene. Player/Monster controllers, encounter scripts, team map, and original preview are unchanged from imported main commit **755970a**. Changes are committed and published only to **School_System**; other branches are not modified. The earlier `scenes/school_system_demo.tscn` remains an optional isolated test scene, not the default game.
+## File ownership and structure
 
-## Verification and boundaries
+- `scenes/demo_scene.gd` extends `scripts/school/school_game.gd`, which extends the team's `scenes/school_blockout_preview.gd`. Demo progression/capture stays in the demo; School environment features stay under `scripts/school/`.
+- `scripts/school/school_bell.gd` supports both guaranteed Bells and persistent final escape. The demo reuses its authored `SchoolBell` node; no duplicate scheduler is created.
+- `scripts/game_scene_toggle.gd` is the persistent toggle autoload in `project.godot`.
+- Player/Monster and scene dependencies were synchronized from team main `220154c`; their capture interfaces are reused.
+- `scenes/school_system_demo.tscn`, foundation, layout, and graybox room-event simulations remain available for isolated testing. Their simulated Library/Lab events do not replace the team's authored encounters.
 
-Godot 4.7.2: Bell regression (114 transitions), foundation (48 locations / 147 collision-tested segments), room events (2 rewards), and full-game integration checks passed with zero failures. The rendered integration test also passed; the screenshot above is its actual viewport. Integration checks cover startup, all nine objectives, hidden debug data, Bell/Monster/audio transitions without teleport, safe snapshots, real pickup pressure, final-key gating, indefinite final Bell, and exit validation.
+Changes are published on the `School_System` branch. Updating GitHub Pages requires a separate merge/deployment of that branch.
 
-The team currently uses placeholder models. Its Player capture/respawn interface is still a scaffold and Monster does not yet emit a capture request; this integration does not invent death detection or replace another owner's controller. Complete capture/checkpoint gameplay and a Web export remain separate team work. The old graybox maze/lab simulations are retained for tests; they do not replace the team's existing Library/Lab encounters.
+## Validation
 
-Timing and lighting exports in the new main scene are provisional tuning, not permanent design rules. The larger map, seven belongings, existing minimap, safe rooms, and authored encounter exceptions are preserved per Zion's October 9 instruction.
-
-Run checks with a working Godot executable:
+Run with Godot 4.7.2:
 
 ```text
-godot --headless --path . --script res://tests/school_bell_test.gd
-godot --headless --path . --script res://tests/school_foundation_test.gd
-godot --headless --path . --script res://tests/school_room_events_test.gd
-godot --headless --path . --script res://tests/school_demo_test.gd
+godot --headless --path . --script tests/school_bell_test.gd
+godot --headless --path . --script tests/school_foundation_test.gd
+godot --headless --path . --script tests/school_room_events_test.gd
+godot --headless --path . --script tests/school_demo_test.gd
+godot --headless --path . --script tests/team_demo_integration_test.gd
 ```
 
-Add `-- --capture` to the last command without `--headless` to regenerate the integrated start screenshot.
+The School integration test covers both full scenes, actual pickups, Bell/audio state, safe rooms, final-key gating, and victory. The team demo test covers shared scheduler ownership, progression, encounter pauses, capture/checkpoints, guaranteed/final Bells, and button/F2 switching. Run the latter without `--headless` and with `-- --capture` to save a local screenshot under `.godot/`.

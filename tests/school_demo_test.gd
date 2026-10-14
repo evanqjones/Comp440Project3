@@ -15,7 +15,8 @@ func _check(condition: bool, message: String) -> void:
 
 func _run() -> void:
 	var main_path: String = ProjectSettings.get_setting("application/run/main_scene")
-	_check(main_path == "res://scenes/after_school.tscn", "F5 must launch the integrated team game")
+	_check(main_path == "res://scenes/demo_scene.tscn", "F5 must launch the main team game")
+	await _check_full_game("res://scenes/after_school.tscn")
 	await _check_full_game(main_path)
 	var demo = load("res://scenes/school_system_demo.tscn").instantiate()
 	root.add_child(demo)
@@ -76,6 +77,12 @@ func _check_full_game(path: String) -> void:
 	_check(game.get_stalking_locations().size() > 0, "Full building exposes stalking candidates")
 	_check(game._final_exit_door.interaction_locked, "Exit is initially locked")
 	var monster_position: Vector3 = game.monster.global_position
+	if game.demo_progression_rules_enabled:
+		_check(game.bell == game.school_bell, "Demo must share School's single scheduler")
+		_check(not game.demo_monster_spawned and not game.monster.visible, "Demo hides Monster before School Keys")
+		game.bell._process(1000.0)
+		_check(not game.bell.bell_active, "Demo does not schedule bells before progression unlock")
+		game.bell.start_scheduling()
 	game.bell._process(61.0)
 	_check(game.bell.bell_active and game.monster.current_state == &"BELL_CHASE", "Automatic bell starts actual Monster chase")
 	_check(game.monster.global_position.is_equal_approx(monster_position), "Bell never teleports monster")
@@ -90,6 +97,7 @@ func _check_full_game(path: String) -> void:
 	_check(not game._try_collect_preview_item(), "Cannot collect final key before all belongings")
 	game.player.global_position = game._item_markers[&"school_keys"].global_position
 	_check(game._try_collect_preview_item(), "Existing key pickup works")
+	_check(game._final_exit_door.interaction_locked, "School Keys do not unlock the final exit")
 	_check(game.bell.get_bell_snapshot().progression_index == 0, "Access keys are not a belonging")
 	game.player.global_position = game._item_markers[&"weight"].global_position
 	_check(game._try_collect_preview_item(), "Existing Weight pickup works")
