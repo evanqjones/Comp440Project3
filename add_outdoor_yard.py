@@ -258,6 +258,40 @@ def add_star_field(collection):
         for segment in range(segments):
             next_segment = (segment+1) % segments
             faces.append((last_ring+segment,bottom,last_ring+next_segment))
+    # Continue the same sky over the south/front entrance approach so the
+    # doorway has stars in its sightline as well as the west yard.
+    entry_rng = random.Random(441)
+    for _ in range(20):
+        cx = 23.1 + entry_rng.uniform(-5.0, 5.0)
+        cy = -31.5 - entry_rng.uniform(0.5, 11.0)
+        cz = entry_rng.uniform(10.0, 15.5)
+        radius = entry_rng.uniform(0.045, 0.085)
+        base = len(verts)
+        verts.append((cx,cy,cz+radius))
+        for ring in range(1, rings):
+            phi = pi*ring/rings
+            ring_radius = radius*sin(phi)
+            z = cz + radius*cos(phi)
+            for segment in range(segments):
+                theta = 2*pi*segment/segments
+                verts.append((cx+ring_radius*cos(theta),cy+ring_radius*sin(theta),z))
+        bottom = len(verts)
+        verts.append((cx,cy,cz-radius))
+        first_ring = base + 1
+        for segment in range(segments):
+            next_segment = (segment+1) % segments
+            faces.append((base,first_ring+segment,first_ring+next_segment))
+        for ring in range(rings-2):
+            ring_a = first_ring + ring*segments
+            ring_b = ring_a + segments
+            for segment in range(segments):
+                next_segment = (segment+1) % segments
+                faces.extend(((ring_a+segment,ring_b+segment,ring_b+next_segment),
+                              (ring_a+segment,ring_b+next_segment,ring_a+next_segment)))
+        last_ring = first_ring + (rings-2)*segments
+        for segment in range(segments):
+            next_segment = (segment+1) % segments
+            faces.append((last_ring+segment,bottom,last_ring+next_segment))
     stars = mesh_object("Yard Sky - White Star Dots", verts, faces,
                         material("Yard Sky - Soft White Emission", (1.0,0.98,0.90), 0.45), collection)
     bsdf = stars.data.materials[0].node_tree.nodes.get("Principled BSDF")
@@ -317,7 +351,7 @@ def main():
 
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)
-    print("Outdoor yard updated: west/south perimeter fence with closed gate, 5 trees, sports equipment, 2 benches, and 84 white sky stars")
+    print("Outdoor yard updated: west/south perimeter fence with closed gate, 5 trees, sports equipment, 2 benches, and 104 white sky stars including the front entrance")
 
 
 main()
