@@ -13,7 +13,7 @@ const PICKUP_AURA_SHADER: Shader = preload("res://shaders/pickup_aura.gdshader")
 @onready var preview_light: DirectionalLight3D = $PreviewLight
 @onready var bell_status: Label = $DebugOverlay/BellStatus
 @onready var spawn_help: Label = $DebugOverlay/SpawnHelp
-@onready var item_help: Label = $DebugOverlay/ItemHelp
+@onready var item_help: Label = $DebugOverlay/ObjectiveNote/NoteContent/ItemHelp
 var _character_interaction_prompt: Label3D
 
 const NORMAL_BACKGROUND := Color(0.012, 0.022, 0.065, 1.0)
@@ -336,6 +336,9 @@ func _create_preview_item_minimap() -> void:
 		_add_minimap_floor_entry(String(item["floor"]), floor_entries, seen_floors, has_world_bounds)
 		if not floor_entries.is_empty():
 			has_world_bounds = true
+	_add_minimap_floor_entry("school site floor - circulation", floor_entries, seen_floors, has_world_bounds)
+	if not floor_entries.is_empty():
+		has_world_bounds = true
 	if not has_world_bounds:
 		return
 
@@ -368,7 +371,7 @@ func _create_preview_item_minimap() -> void:
 	layout.add_theme_constant_override("separation", 4)
 	panel.add_child(layout)
 	var title := Label.new()
-	title.text = "OBJECTIVES"
+	title.text = "SCHOOL MAP"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_color", Color(0.88, 0.92, 0.98))
 	title.add_theme_font_size_override("font_size", 14)
@@ -381,6 +384,27 @@ func _create_preview_item_minimap() -> void:
 	_item_minimap_map.clip_contents = true
 	layout.add_child(_item_minimap_map)
 	for floor_entry in floor_entries:
+		if String(floor_entry["name"]) != "school site floor - circulation":
+			continue
+		var hallway_bounds: AABB = floor_entry["bounds"]
+		var hallway_shape := Panel.new()
+		hallway_shape.name = "HallwayFootprint"
+		hallway_shape.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var hallway_style := StyleBoxFlat.new()
+		hallway_style.bg_color = Color(0.12, 0.19, 0.23, 0.96)
+		hallway_style.border_color = Color(0.47, 0.61, 0.65, 0.92)
+		hallway_style.set_border_width_all(1)
+		hallway_style.set_corner_radius_all(2)
+		hallway_shape.add_theme_stylebox_override("panel", hallway_style)
+		_item_minimap_map.add_child(hallway_shape)
+		var hallway_top_left := _item_minimap_position(Vector3(hallway_bounds.position.x, 0.0, hallway_bounds.position.z))
+		var hallway_bottom_right := _item_minimap_position(Vector3(hallway_bounds.end.x, 0.0, hallway_bounds.end.z))
+		hallway_shape.position = hallway_top_left
+		hallway_shape.size = hallway_bottom_right - hallway_top_left
+
+	for floor_entry in floor_entries:
+		if String(floor_entry["name"]) == "school site floor - circulation":
+			continue
 		var floor_bounds: AABB = floor_entry["bounds"]
 		var room_shape := Panel.new()
 		room_shape.name = "RoomShape_%s" % String(floor_entry["name"]).replace(" ", "_")
@@ -396,6 +420,23 @@ func _create_preview_item_minimap() -> void:
 		var room_bottom_right := _item_minimap_position(Vector3(floor_bounds.end.x, 0.0, floor_bounds.end.z))
 		room_shape.position = room_top_left
 		room_shape.size = room_bottom_right - room_top_left
+
+	for door in get_tree().get_nodes_in_group("preview_school_doors"):
+		var door_node := door as Node3D
+		if door_node == null:
+			continue
+		var door_marker := Panel.new()
+		door_marker.name = "DoorMark_%s" % String(door_node.get("door_id")).replace(" ", "_")
+		door_marker.custom_minimum_size = Vector2(9.0, 3.0)
+		door_marker.size = door_marker.custom_minimum_size
+		door_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var door_style := StyleBoxFlat.new()
+		door_style.bg_color = Color(1.0, 0.48, 0.29, 1.0) if bool(door_node.get("interaction_locked")) else Color(0.9, 0.95, 0.91, 1.0)
+		door_style.set_corner_radius_all(1)
+		door_marker.add_theme_stylebox_override("panel", door_style)
+		_item_minimap_map.add_child(door_marker)
+		door_marker.position = _item_minimap_position(door_node.global_position) - door_marker.size * 0.5
+		door_marker.rotation = door_node.global_rotation.y
 
 	for item in PREVIEW_ITEMS:
 		var marker := _item_markers.get(item["id"]) as Node3D
@@ -447,7 +488,7 @@ func _create_preview_item_minimap() -> void:
 	_update_item_minimap_player_dot()
 
 	var legend := Label.new()
-	legend.text = "Blue: you    Yellow: current objectives"
+	legend.text = "Blue: you   Yellow: objectives   White: doors"
 	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	legend.add_theme_color_override("font_color", Color(0.92, 0.92, 0.92))
 	legend.add_theme_font_size_override("font_size", 10)
@@ -532,7 +573,10 @@ func _update_preview_item_encounter() -> void:
 			_refresh_item_minimap_objectives()
 			item_help.text = "You made it outside | The entrance slammed shut behind you"
 		else:
-			item_help.text = "FINAL BELL: reach the entrance | E: collect a nearby item"
+			item_help.text = "Escape school"
+		return
+	if _bell_debug_active:
+		item_help.text = "Hide"
 		return
 	if _brush_escape_active:
 		if _player_has_reached_artroom_hallway():
@@ -597,7 +641,10 @@ func _update_preview_item_encounter() -> void:
 		if is_instance_valid(_auditorium_encounter):
 			_auditorium_encounter.call("finish_encounter")
 		monster.end_preview_item_encounter()
-		item_help.text = "Item circles: E to collect when close | School Keys have no monster encounter"
+		if not _collected_preview_items.has(&"school_keys"):
+			item_help.text = "Get school keys"
+		else:
+			item_help.text = "Collected your missing items"
 		return
 	var encounter: StringName = current_item["encounter"]
 	if _active_preview_encounter != encounter:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scenes/school_blockout_preview.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player_placeholder.tscn" id="2_player"]
@@ -10,6 +10,25 @@ background_color = Color(0.012, 0.022, 0.065, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.13, 0.17, 0.29, 1)
 ambient_light_energy = 0.42
+
+[sub_resource type="StyleBoxFlat" id="ObjectiveNote_style"]
+bg_color = Color(0.96, 0.87, 0.58, 0.96)
+border_color = Color(0.57, 0.43, 0.21, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+corner_radius_top_left = 3
+corner_radius_top_right = 2
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 2
+shadow_color = Color(0, 0, 0, 0.25)
+shadow_size = 6
+shadow_offset = Vector2(2, 3)
+content_margin_left = 15.0
+content_margin_top = 13.0
+content_margin_right = 15.0
+content_margin_bottom = 13.0
 
 [node name="SchoolBlockoutPreview" type="Node3D"]
 script = ExtResource("1_script")
@@ -48,10 +67,34 @@ offset_bottom = 80.0
 text = "M: toggle green spawn panels   X: offscreen relocation (Bell blocks it)"
 theme_override_colors/font_color = Color(0.45, 1, 0.45, 1)
 
-[node name="ItemHelp" type="Label" parent="DebugOverlay"]
-offset_left = 20.0
-offset_top = 82.0
-offset_right = 1100.0
-offset_bottom = 112.0
+[node name="ObjectiveNote" type="PanelContainer" parent="DebugOverlay"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 424.0
+offset_bottom = 164.0
+rotation = -0.012
+theme_override_styles/panel = SubResource("ObjectiveNote_style")
+
+[node name="NoteContent" type="VBoxContainer" parent="DebugOverlay/ObjectiveNote"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="ObjectiveTitle" type="Label" parent="DebugOverlay/ObjectiveNote/NoteContent"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.28, 0.19, 0.1, 1)
+theme_override_font_sizes/font_size = 15
+text = "OBJECTIVE"
+
+[node name="NoteRule" type="ColorRect" parent="DebugOverlay/ObjectiveNote/NoteContent"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+color = Color(0.47, 0.34, 0.18, 0.5)
+
+[node name="ItemHelp" type="Label" parent="DebugOverlay/ObjectiveNote/NoteContent"]
+custom_minimum_size = Vector2(0, 76)
+layout_mode = 2
+size_flags_vertical = 3
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.18, 0.16, 0.12, 1)
+theme_override_font_sizes/font_size = 18
 text = "Item circles: E to collect when close"
-theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
