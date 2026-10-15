@@ -34,6 +34,7 @@ var _standing_visual_height := 1.65
 var _interaction_target_id: StringName = &""
 var _pending_interaction_target_id: StringName = &""
 var _locker_camera_active := false
+var _ceiling_glance_tween: Tween
 
 func _ready() -> void:
     super._ready()
@@ -152,6 +153,35 @@ func set_locker_camera_mode(enabled: bool) -> void:
     else:
         player_camera.position = Vector3.ZERO
         player_camera.rotation = Vector3.ZERO
+
+func play_ceiling_monster_glance(target_position: Vector3) -> void:
+    if not is_instance_valid(camera_pivot):
+        return
+    if is_instance_valid(_ceiling_glance_tween):
+        _ceiling_glance_tween.kill()
+    var restore_input := _input_enabled
+    set_input_enabled(false)
+    var target_local := global_transform.affine_inverse() * target_position
+    var direction := target_local - camera_pivot.position
+    var horizontal_distance := Vector2(direction.x, direction.z).length()
+    var target_yaw := camera_pivot.rotation.y
+    if horizontal_distance > 0.01:
+        var raw_yaw := atan2(-direction.x, -direction.z)
+        target_yaw += wrapf(raw_yaw - target_yaw, -PI, PI)
+    var target_pitch := clampf(atan2(direction.y, maxf(horizontal_distance, 0.01)), camera_min_pitch, 1.1)
+    var starting_rotation := camera_pivot.rotation
+    var glance_rotation := Vector3(target_pitch, target_yaw, 0.0)
+    _ceiling_glance_tween = create_tween()
+    _ceiling_glance_tween.set_trans(Tween.TRANS_QUAD)
+    _ceiling_glance_tween.set_ease(Tween.EASE_OUT)
+    _ceiling_glance_tween.tween_property(camera_pivot, "rotation", glance_rotation, 0.28)
+    _ceiling_glance_tween.tween_interval(0.35)
+    _ceiling_glance_tween.set_ease(Tween.EASE_IN_OUT)
+    _ceiling_glance_tween.tween_property(camera_pivot, "rotation", starting_rotation, 0.32)
+    _ceiling_glance_tween.finished.connect(func() -> void:
+        set_input_enabled(restore_input)
+        _ceiling_glance_tween = null
+    )
 
 func play_capture_and_respawn(checkpoint_id: StringName) -> void:
     if bool(get("capture_presentation_active")):

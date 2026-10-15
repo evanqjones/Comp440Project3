@@ -2,6 +2,7 @@ extends Node3D
 
 const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
 const LOCKER_MODEL: PackedScene = preload("res://assets/lockers.glb")
+const SCHOOL_DRESSING_MODEL: PackedScene = preload("res://assets/school_dressing.glb")
 const PICKUP_AURA_SHADER: Shader = preload("res://shaders/pickup_aura.gdshader")
 
 @export var generate_school_collision: bool = true
@@ -128,6 +129,7 @@ var _item_markers: Dictionary = {}
 var _item_visuals: Dictionary = {}
 var _item_auras: Dictionary = {}
 var _item_visual_elapsed := 0.0
+var _school_dressing_asset: Node3D
 var _item_minimap_dots: Dictionary = {}
 var _entrance_minimap_dot: Control
 var _item_minimap_map: Control
@@ -169,6 +171,7 @@ func _ready() -> void:
 	if generate_school_collision:
 		_add_school_collisions(school)
 	_create_cafeteria_tables()
+	_create_school_room_dressing()
 	_create_school_doors()
 	_create_ruler_hallway_lockers()
 	_register_placed_locker_spots(school)
@@ -217,7 +220,8 @@ func _process(delta: float) -> void:
 	if _bell_hall_spawn_pending and _bell_debug_active and not _final_bell_started:
 		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
-	_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
+	if is_instance_valid(_camera_hallway_spawn):
+		_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
 	_update_item_minimap_player_dot()
 	if demo_progression_rules_enabled and not demo_monster_spawned:
 		_update_spawn_debug_label()
@@ -576,7 +580,7 @@ func _update_preview_item_encounter() -> void:
 			item_help.text = "Escape school"
 		return
 	if _bell_debug_active:
-		item_help.text = "Hide"
+		item_help.text = "Hide (get in a lit room)"
 		return
 	if _brush_escape_active:
 		if _player_has_reached_artroom_hallway():
@@ -594,7 +598,7 @@ func _update_preview_item_encounter() -> void:
 			_microphone_escape_finish_started = true
 			_finish_microphone_escape()
 		else:
-			item_help.text = "Microphone collected | Monster turns for 3s, pauses for 3s | Reach the south door"
+			item_help.text = "Microphone collected | Chase begins in 2 seconds | Reach the south door"
 		return
 	if _ruler_hall_event_active:
 		item_help.text = "Ruler encounter: hide in one of the six hallway lockers"
@@ -643,6 +647,8 @@ func _update_preview_item_encounter() -> void:
 		monster.end_preview_item_encounter()
 		if not _collected_preview_items.has(&"school_keys"):
 			item_help.text = "Get school keys"
+		elif demo_progression_rules_enabled and _demo_all_required_items_collected() and not _collected_preview_items.has(&"front_door_key"):
+			item_help.text = "Get the front door key"
 		else:
 			item_help.text = "Collected your missing items"
 		return
@@ -845,6 +851,65 @@ func _create_cafeteria_tables() -> void:
 			for side in [-1.0, 1.0]:
 				_add_table_part(table, Vector3(0.1, 0.72, 0.1), Vector3(float(end) * (length * 0.5 - 0.12), -0.1, float(side) * (width * 0.5 - 0.08)), Color(0.3, 0.35, 0.38))
 
+func _create_school_room_dressing() -> void:
+	_school_dressing_asset = SCHOOL_DRESSING_MODEL.instantiate() as Node3D
+	_create_lobby_dressing(_school_floor_bounds("lobby floor"))
+	_create_hallway_dressing()
+
+func _school_floor_bounds(floor_name: String) -> AABB:
+	var floor_node := _find_room_floor(school, floor_name)
+	if floor_node == null or floor_node.mesh == null:
+		return AABB()
+	return floor_node.global_transform * floor_node.mesh.get_aabb()
+
+func _instance_school_dressing(prototype_name: String, world_position: Vector3, collision_size: Vector3) -> StaticBody3D:
+	if _school_dressing_asset == null:
+		return null
+	var prototype := _school_dressing_asset.find_child(prototype_name, true, false) as Node3D
+	if prototype == null:
+		push_warning("Missing Blender school prop prototype: %s" % prototype_name)
+		return null
+	var body := StaticBody3D.new()
+	body.name = prototype_name + "_Placed"
+	body.collision_layer = 1
+	body.collision_mask = 1
+	school.add_child(body)
+	body.global_position = world_position
+	var visual := prototype.duplicate() as Node3D
+	visual.position = Vector3.ZERO
+	visual.rotation = Vector3.ZERO
+	body.add_child(visual)
+	var collision := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = collision_size
+	collision.shape = shape
+	collision.position.y = collision_size.y * 0.5
+	body.add_child(collision)
+	return body
+
+func _create_lobby_dressing(bounds: AABB) -> void:
+	if bounds.size == Vector3.ZERO:
+		return
+	var floor_y := bounds.end.y
+	for index in range(2):
+		var x_ratio := 0.2 if index == 0 else 0.8
+		_instance_school_dressing("Prop_LobbySofa", Vector3(bounds.position.x + bounds.size.x * x_ratio, floor_y, bounds.position.z + bounds.size.z * 0.68), Vector3(1.7, 0.9, 0.82))
+	_instance_school_dressing("Prop_LobbyTrophyCase", Vector3(bounds.position.x + bounds.size.x * 0.5, floor_y, bounds.position.z + bounds.size.z * 0.16), Vector3(2.1, 1.72, 0.62))
+	for index in range(2):
+		var x_ratio := 0.08 if index == 0 else 0.92
+		_instance_school_dressing("Prop_LobbyPlanter", Vector3(bounds.position.x + bounds.size.x * x_ratio, floor_y, bounds.position.z + bounds.size.z * 0.84), Vector3(0.58, 0.9, 0.58))
+
+func _create_hallway_dressing() -> void:
+	var hall_floor := _school_floor_bounds("school site floor - circulation")
+	if hall_floor.size == Vector3.ZERO:
+		return
+	var hallway_stops := [Vector2(6.5, -5.0), Vector2(22.5, 11.0), Vector2(20.0, 15.5), Vector2(28.0, 16.0)]
+	for index in hallway_stops.size():
+		var point: Vector2 = hallway_stops[index]
+		if point.x < hall_floor.position.x or point.x > hall_floor.end.x or point.y < hall_floor.position.z or point.y > hall_floor.end.z:
+			continue
+		_instance_school_dressing("Prop_HallwayRecyclingBin", Vector3(point.x + 0.65, hall_floor.end.y, point.y), Vector3(0.38, 0.78, 0.38))
+
 func _add_preview_collider_box(node_name: String, center: Vector3, size: Vector3, color: Color) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = node_name
@@ -932,7 +997,7 @@ func _try_collect_preview_item() -> bool:
 		_microphone_escape_finish_started = false
 		_active_preview_encounter = &"microphone_escape"
 		_auditorium_encounter.call("begin_escape")
-		item_help.text = "Microphone collected | Monster turns, pauses, then chases | Reach the south door"
+		item_help.text = "Microphone collected | Chase begins in 2 seconds | Reach the south door"
 		return true
 	if item_id == &"brush":
 		_start_artroom_brush_escape()
@@ -1108,6 +1173,7 @@ func _start_artroom_brush_escape() -> void:
 			var wall_bounds: AABB = wall.global_transform * wall.mesh.get_aabb()
 			ceiling_height = maxf(ceiling_height, wall_bounds.end.y - 0.08)
 	_artroom_brush_encounter.call("begin_brush_escape", bounds, ceiling_height)
+	player.call("play_ceiling_monster_glance", monster.global_position)
 	_brush_escape_active = true
 	_active_preview_encounter = &"brush_escape"
 	item_help.text = "The ceiling searchlight is sweeping the Artroom | Escape through the Bathroom door"
@@ -1946,11 +2012,27 @@ func _create_school_doors() -> void:
 		door.opened.connect(_on_preview_door_opened)
 		door.open_state_changed.connect(_on_preview_door_state_changed)
 		door.add_to_group("preview_school_doors")
+		if _is_lobby_exterior_door(String(header.name), center):
+			door.set_glass_appearance()
 		school.add_child(door)
 	var entrance_door := _find_school_entrance_door()
 	if is_instance_valid(entrance_door):
 		entrance_door.call("set_interaction_locked", true)
 	print("Preview doors created: %d" % centers.size())
+
+func _is_lobby_exterior_door(door_id: String, door_position: Vector3) -> bool:
+	var normalized_id := door_id.to_lower()
+	if (not normalized_id.contains("lobby") and not normalized_id.contains("outside")) or normalized_id.contains("main office"):
+		return false
+	var lobby_floor := _find_room_floor(school, "lobby floor")
+	if lobby_floor == null or lobby_floor.mesh == null:
+		return false
+	var bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
+	var edge_distance := minf(
+		minf(absf(door_position.x - bounds.position.x), absf(door_position.x - bounds.end.x)),
+		minf(absf(door_position.z - bounds.position.z), absf(door_position.z - bounds.end.z))
+	)
+	return edge_distance <= 1.6
 
 func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
 	if node is MeshInstance3D and node.name.to_lower().contains("door header wall infill"):

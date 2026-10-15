@@ -15,7 +15,7 @@ extends CharacterBody3D
 @export_range(1.0, 15.0, 0.5) var preview_door_investigation_seconds: float = 6.0
 @export_range(0.1, 2.0, 0.1) var preview_door_investigation_speed: float = 0.5
 @export_range(0.1, 1.0, 0.05) var preview_bell_window_lurk_speed: float = 0.35
-@export_range(0.05, 1.0, 0.05) var preview_book_follow_speed: float = 0.5
+@export_range(0.1, 5.0, 0.1) var preview_book_follow_speed: float = 1.5
 @export_range(0.5, 15.0, 0.25) var preview_snack_peek_interval_min: float = 3.0
 @export_range(0.5, 20.0, 0.25) var preview_snack_peek_interval_max: float = 5.0
 @export_range(0.25, 5.0, 0.25) var preview_snack_peek_seconds: float = 1.5
