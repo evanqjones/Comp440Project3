@@ -143,6 +143,7 @@ var _final_exit_chase_started := false
 var _bell_hall_spawn_pending := false
 var _final_exit_door: Node3D
 var _final_exit_door_slammed := false
+var _victory_started := false
 var _science_encounter_started := false
 var _science_spawn_pending := false
 var _science_window_spawn_pending := false
@@ -209,6 +210,8 @@ func _ready() -> void:
 	_apply_bell_debug_state()
 
 func _process(delta: float) -> void:
+	if _victory_started:
+		return
 	_update_preview_item_visuals(delta)
 	_update_fluorescent_flicker(delta)
 	_update_preview_item_encounter()
@@ -569,13 +572,16 @@ func _preview_item_color(item_id: StringName) -> Color:
 	return Color.WHITE
 
 func _update_preview_item_encounter() -> void:
+	if _victory_started:
+		return
 	if _final_bell_started:
-		if not _final_exit_door_slammed and _player_has_cleared_school_entrance():
+		if _final_exit_chase_started and not _final_exit_door_slammed and _player_has_cleared_school_entrance():
 			_final_exit_door_slammed = true
 			_final_exit_door.call("set_interaction_locked", true)
 			_final_exit_door.call("slam_shut")
 			_refresh_item_minimap_objectives()
 			item_help.text = "You made it outside | The entrance slammed shut behind you"
+			_complete_final_escape()
 		else:
 			item_help.text = "Escape school"
 		return
@@ -1050,6 +1056,25 @@ func _start_final_key_bell() -> void:
 	monster.call("begin_preview_final_bell_chase")
 	bell_status.text = "FINAL BELL: ON | Escape to the entrance"
 	item_help.text = "Front Door Key collected | The entrance unlocks when the final chase begins"
+
+func _complete_final_escape() -> void:
+	if _victory_started:
+		return
+	_victory_started = true
+	_bell_hall_spawn_pending = false
+	_bell_debug_active = false
+	monster.call("set_preview_bell_active", false)
+	monster.velocity = Vector3.ZERO
+	monster.process_mode = Node.PROCESS_MODE_DISABLED
+	player.call("set_input_enabled", false)
+	player.velocity = Vector3.ZERO
+	player.set_physics_process(false)
+	player.set_process_unhandled_input(false)
+	var ending := preload("res://scenes/escape_victory.gd").new()
+	ending.name = "EscapeVictory"
+	add_child(ending)
+	ending.show_victory()
+
 
 func _on_preview_final_bell_chase_started() -> void:
 	if not _final_bell_started or _final_exit_door_slammed or not is_instance_valid(_final_exit_door):
@@ -2062,6 +2087,8 @@ func _relocate_nearest_spawn_to_noise(source_position: Vector3) -> void:
 			return
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _victory_started:
+		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	if event.keycode == KEY_E:
