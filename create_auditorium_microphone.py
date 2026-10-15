@@ -218,4 +218,166 @@ def main():
     print("Stage front Y: %.3f; microphone Y: %.3f; exported: %s" % (stage_front_y, mic_y, glb_path))
 
 
-main()
+# The default operation now polishes the existing authored layout. The original
+# blockout rebuild is retained only as an explicit authoring operation.
+POLISH_TAG = "auditorium_polish_generator"
+
+
+def polish_current_auditorium():
+    import json
+    import math
+    import os
+    import runpy
+    from pathlib import Path
+    from mathutils import Matrix
+
+    root = Path(bpy.data.filepath).parent
+    Builder = runpy.run_path(str(root / "create_cafeteria_library_props.py"))["Builder"]
+    group_name = "School Props - Auditorium"
+    old = bpy.data.collections.get(group_name)
+    if old and (not old.get(POLISH_TAG) or old.children or any(not o.get(POLISH_TAG) for o in old.objects)):
+        raise RuntimeError("Unowned auditorium collection")
+    floor = bpy.data.objects["Auditorium Floor"]
+    chairs = [bpy.data.objects.get(f"Auditorium Encounter Chair {i:02d}") for i in range(1,31)]
+    if any(o is None for o in chairs):
+        raise RuntimeError("Inspect current chair layout before polishing")
+    # These collision meshes must remain byte-for-byte equivalent geometrically.
+    collision = {o.name: [tuple(v.co) for v in o.data.vertices] for o in bpy.data.objects
+                 if o.type == "MESH" and (o.name.startswith("Auditorium Encounter Stage") or
+                 o.name.startswith("Auditorium Encounter Chair") and o.name.endswith(" Back"))}
+    if old:
+        for o in list(old.objects): bpy.data.objects.remove(o,do_unlink=True)
+        bpy.data.collections.remove(old)
+    for m in list(bpy.data.meshes):
+        if m.get(POLISH_TAG) and m.users == 0: bpy.data.meshes.remove(m)
+    group = bpy.data.collections.new(group_name)
+    group[POLISH_TAG] = True
+    bpy.data.collections[COLLECTION_NAME].children.link(group)
+    materials = {k: bpy.data.materials["School Props - "+k] for k in
+                 ("Chair","Metal","Laminate","Cabinet","Art","Canvas")}
+    designs = {}
+    objects = []
+
+    def mesh(name,k):
+        m = k.mesh(name,materials)
+        # Builder is reused for beveling, but ownership belongs to this generator.
+        if "cafeteria_library_generator" in m: del m["cafeteria_library_generator"]
+        m[POLISH_TAG] = True
+        designs[name] = m
+        return m
+
+    def place(name,m,parent,location=(0,0,0)):
+        o = bpy.data.objects.new("Auditorium Finish - "+name,m)
+        group.objects.link(o)
+        o[POLISH_TAG] = True
+        o["preview_collision_disabled"] = True
+        o["collision_policy"] = "visual-only; original stage and cover retained"
+        o.parent = parent
+        o.matrix_parent_inverse = Matrix.Identity(4)
+        o.location = location
+        objects.append(o)
+        return o
+
+    # Reuse one mesh per seat and leg; fit inside the original exact footprint.
+    k = Builder()
+    k.box((.62,.60,.025),(0,0,-.0375),"Metal",.008)
+    k.box((.60,.60,.075),(0,0,.0125),"Chair",.024)
+    seat = mesh("Upholstered Seat",k)
+    k = Builder();k.box((.055,.055,.38),(0,0,0),"Metal",.007)
+    leg = mesh("Formed Chair Leg",k)
+    k = Builder()
+    k.box((.54,.026,.47),(0,-.216,.735),"Chair",.024)
+    for x in (-.25,.25):
+        k.box((.045,.045,.50),(x,-.27,.70),"Metal",.006)
+        k.box((.045,.50,.035),(x,0,.25),"Metal",.005)
+    detail = mesh("Chair Upholstery and Braces",k)
+    for i,chair in enumerate(chairs,1):
+        for part in chair.children:
+            if part.type != "MESH": continue
+            if " Seat" in part.name: part.data = seat
+            elif " Leg" in part.name: part.data = leg
+        place(f"Chair Detail {i:02d}",detail,chair)
+
+    x0,x1,y0,y1,z0,z1 = world_bounds(floor)
+    cx = (x0+x1)/2
+    stage = bpy.data.objects["Auditorium Encounter Stage Platform"]
+    sx0,sx1,sy0,sy1,sz0,sz1 = world_bounds(stage)
+    # Panelled fascia occupies the old platform face, beside the unchanged steps.
+    k = Builder()
+    k.box((2.55,.045,.30),(0,0,.24),"Laminate",.012)
+    for x in (-.84,0,.84):
+        k.box((.77,.018,.20),(x,-.03,.24),"Cabinet",.008)
+    fascia = mesh("Panelled Fascia",k)
+    for i,side in enumerate((-1,1),1):
+        o=place(f"Fascia {i}",fascia,floor)
+        o.matrix_world = Matrix.Translation((cx+side*2.52,sy0-.025,z1))
+    k = Builder()
+    k.box((2.20,.075,.008),(0,0,0),"Metal",.003)
+    nosing = mesh("Step Nosing",k)
+    for i in (1,2):
+        step=bpy.data.objects[f"Auditorium Encounter Stage Step {i:02d}"]
+        bx0,bx1,by0,by1,bz0,bz1=world_bounds(step)
+        o=place(f"Step Nosing {i}",nosing,floor)
+        o.matrix_world=Matrix.Translation((cx,by0+.05,bz1+.004))
+    # Pleated side drapes and a high valance frame the stage, clear of its center.
+    k = Builder()
+    for i in range(5):
+        k.box((.105,.12 if i%2 else .18,2.45),(-.22+i*.11,0,1.225),"Art",.014)
+    curtain=mesh("Pleated Side Drape",k)
+    for i,side in enumerate((-1,1),1):
+        o=place(f"Side Drape {i}",curtain,floor)
+        o.matrix_world=Matrix.Translation((cx+side*3.55,y1-.28,z1+.58))
+    k=Builder()
+    k.box((7.75,.22,.32),(0,0,0),"Art",.018)
+    k.box((7.78,.26,.055),(0,0,.17),"Laminate",.010)
+    valance=mesh("Curtain Valance",k)
+    o=place("Valance",valance,floor)
+    o.matrix_world=Matrix.Translation((cx,y1-.27,z1+3.20))
+    k=Builder()
+    k.box((.11,1.10,1.25),(0,0,0),"Metal",.015)
+    k.box((.025,.99,1.13),(.068,0,0),"Cabinet",.016)
+    for z in (-.34,0,.34):
+        k.box((.026,.96,.018),(.084,0,z),"Chair",0)
+    panel=mesh("Acoustic Panel",k)
+    for side in (-1,1):
+        for i,fraction in enumerate((.28,.49,.69),1):
+            o=place(f"Acoustic Panel {side} {i}",panel,floor)
+            o.matrix_world=Matrix.Translation((x0+.19 if side<0 else x1-.19,y0+(y1-y0)*fraction,z1+2.20)) @ Matrix.Rotation(0 if side<0 else math.pi,4,"Z")
+    k=Builder()
+    for z in (.77,.86): k.cylinder(.048,.045,(0,0,z),"Metal",12)
+    k.box((.08,.055,.045),(.045,0,.82),"Metal",.008)
+    k.box((.12,.18,.012),(0,0,1.386),"Metal",.003)
+    mic=mesh("Microphone Hardware",k)
+    place("Microphone Hardware",mic,bpy.data.objects["Auditorium Encounter - Microphone Stand"])
+    bpy.context.view_layer.update()
+    for name,vertices in collision.items():
+        assert [tuple(v.co) for v in bpy.data.objects[name].data.vertices] == vertices, name
+    # A full 2.25 m center aisle is untouched; wall panels and stage drapes
+    # remain well outside the Monster's central stage spawn/spotlight line.
+    for o in objects:
+        if "Chair Detail" in o.name or "Acoustic" in o.name or "Side Drape" in o.name:
+            a,b,c,d,e,f=world_bounds(o)
+            assert b < cx-1.125 or a > cx+1.125, "Center aisle intrusion: "+o.name
+    # Replace orphaned previous generated meshes after reassigning seats/legs.
+    for m in list(bpy.data.meshes):
+        if m.get(POLISH_TAG) and m.users == 0: bpy.data.meshes.remove(m)
+    for name,m in designs.items(): m.name = "School Auditorium Kit - "+name
+    stats={"new_instances":len(objects),"chairs_refinished":30,"seat_leg_replacements":150,
+           "designs":len(designs),"triangles_per_design":{n:len(m.loop_triangles) for n,m in designs.items()},
+           "new_detail_triangles":sum(len(o.data.loop_triangles) for o in objects),
+           "chair_triangles":len(seat.loop_triangles)+4*len(leg.loop_triangles)+len(detail.loop_triangles)+12,
+           "collision_meshes_preserved":len(collision)}
+    folder=Path(os.environ.get("TEMP","/tmp"))/"final-school-polish-review"
+    folder.mkdir(exist_ok=True)
+    (folder/"auditorium_report.json").write_text(json.dumps(stats,indent=2))
+    bpy.context.preferences.filepaths.save_version=0
+    bpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)
+    print("AUDITORIUM_POLISH",json.dumps(stats,sort_keys=True))
+
+
+if __name__ == "__main__":
+    import sys
+    if "--rebuild-blockout" in sys.argv:
+        main()
+    else:
+        polish_current_auditorium()
