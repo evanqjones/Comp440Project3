@@ -21,6 +21,8 @@ var _door_material: StandardMaterial3D
 var _glass_material: StandardMaterial3D
 var _opened := false
 var _door_width := 1.0
+var _door_height := 2.15
+var _door_thickness := 0.12
 var _is_animating := false
 var _noise_emitted := false
 
@@ -31,6 +33,8 @@ func configure(id: StringName, center: Vector3, width: float, height: float, thi
 	_player = player
 	_monster = monster
 	_door_width = width
+	_door_height = height
+	_door_thickness = thickness
 	is_double = double_door
 	one_way = restricted
 	operable_side = allowed_side.normalized()
@@ -80,6 +84,59 @@ func set_glass_appearance() -> void:
 	for mesh in _panel_meshes:
 		if is_instance_valid(mesh):
 			mesh.material_override = _glass_material
+	_create_transom_window()
+
+func _create_transom_window() -> void:
+	var transom := Node3D.new()
+	transom.name = "CrissCrossTransom"
+	var window_width := maxf(0.38, _door_width - 0.06)
+	var window_height := 0.42
+	var frame_width := 0.04
+	var depth := maxf(0.06, _door_thickness * 0.65)
+	transom.position.y = _door_height + window_height * 0.5
+	add_child(transom)
+	var glass := MeshInstance3D.new()
+	glass.name = "TransomGlass"
+	var glass_mesh := BoxMesh.new()
+	glass_mesh.size = Vector3(window_width - frame_width, window_height - frame_width, depth * 0.55)
+	glass.mesh = glass_mesh
+	glass.material_override = _glass_material
+	glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	transom.add_child(glass)
+
+	var frame_material := StandardMaterial3D.new()
+	frame_material.albedo_color = Color(0.13, 0.18, 0.19, 1.0)
+	frame_material.roughness = 0.38
+	_add_transom_bar(transom, Vector3(window_width, frame_width, depth), Vector3(0.0, window_height * 0.5 - frame_width * 0.5, 0.0), 0.0, frame_material)
+	_add_transom_bar(transom, Vector3(window_width, frame_width, depth), Vector3(0.0, -window_height * 0.5 + frame_width * 0.5, 0.0), 0.0, frame_material)
+	_add_transom_bar(transom, Vector3(frame_width, window_height, depth), Vector3(-window_width * 0.5 + frame_width * 0.5, 0.0, 0.0), 0.0, frame_material)
+	_add_transom_bar(transom, Vector3(frame_width, window_height, depth), Vector3(window_width * 0.5 - frame_width * 0.5, 0.0, 0.0), 0.0, frame_material)
+
+	var lite_count := 2 if is_double else 1
+	var divider_width := 0.035
+	if lite_count == 2:
+		_add_transom_bar(transom, Vector3(divider_width, window_height, depth), Vector3.ZERO, 0.0, frame_material)
+	var lite_width := (window_width - frame_width * 2.0 - divider_width * float(lite_count - 1)) / float(lite_count)
+	var grille_width := maxf(0.1, lite_width - frame_width * 2.0)
+	var grille_height := window_height - frame_width * 2.0
+	var diagonal_length := Vector2(grille_width, grille_height).length()
+	var diagonal_angle := atan2(grille_height, grille_width)
+	for lite_index in range(lite_count):
+		var side := -1.0 if lite_count == 2 and lite_index == 0 else 1.0
+		var lite_center_x := 0.0 if lite_count == 1 else side * (divider_width * 0.5 + lite_width * 0.5)
+		_add_transom_bar(transom, Vector3(diagonal_length, 0.025, depth), Vector3(lite_center_x, 0.0, 0.0), diagonal_angle, frame_material)
+		_add_transom_bar(transom, Vector3(diagonal_length, 0.025, depth), Vector3(lite_center_x, 0.0, 0.0), -diagonal_angle, frame_material)
+
+func _add_transom_bar(parent: Node3D, size: Vector3, local_position: Vector3, angle: float, material: StandardMaterial3D) -> void:
+	var bar := MeshInstance3D.new()
+	var bar_mesh := BoxMesh.new()
+	bar_mesh.size = size
+	bar.mesh = bar_mesh
+	bar.material_override = material
+	bar.position = local_position
+	bar.rotation.z = angle
+	bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(bar)
 
 func _create_panels(width: float, height: float, thickness: float) -> void:
 	var panel_count := 2 if is_double else 1

@@ -217,7 +217,8 @@ func _process(delta: float) -> void:
 	if _bell_hall_spawn_pending and _bell_debug_active and not _final_bell_started:
 		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
-	_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
+	if is_instance_valid(_camera_hallway_spawn):
+		_camera_hallway_spawn.visible = _spawn_marker_nodes_visible and _camera_hallway_spawn_valid
 	_update_item_minimap_player_dot()
 	if demo_progression_rules_enabled and not demo_monster_spawned:
 		_update_spawn_debug_label()
