@@ -165,8 +165,13 @@ var _microphone_escape_active := false
 var _microphone_escape_finish_started := false
 var _artroom_brush_encounter: Node3D
 var _brush_escape_active := false
+var _audio_presentation: Node
 
 func _ready() -> void:
+	_audio_presentation = preload("res://scenes/game_audio_presentation.gd").new()
+	_audio_presentation.name = "GameAudio"
+	add_child(_audio_presentation)
+	_audio_presentation.configure(player as PlayerSystem)
 	_load_school_model()
 	_open_cafeteria_kitchen()
 	if generate_school_collision:
@@ -983,6 +988,7 @@ func _try_collect_preview_item() -> bool:
 		return false
 	var item_id: StringName = nearest_item["id"]
 	_collected_preview_items[item_id] = true
+	_audio_presentation.play_pickup()
 	_refresh_demo_door_locks()
 	_refresh_item_minimap_objectives()
 	(_item_markers[item_id] as Node3D).visible = false
@@ -1029,6 +1035,7 @@ func _start_final_key_bell() -> void:
 		push_warning("Final key collected, but the entrance door could not be found.")
 	_final_bell_started = true
 	_bell_debug_active = true
+	_audio_presentation.set_bell_active(true)
 	preview_environment.environment.background_color = BELL_BACKGROUND
 	preview_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	preview_environment.environment.ambient_light_color = BELL_AMBIENT
@@ -1061,6 +1068,7 @@ func _complete_final_escape() -> void:
 	if _victory_started:
 		return
 	_victory_started = true
+	_audio_presentation.finish_run()
 	_bell_hall_spawn_pending = false
 	_bell_debug_active = false
 	monster.call("set_preview_bell_active", false)
@@ -2066,6 +2074,7 @@ func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
 		_collect_door_headers(child, result)
 
 func _on_preview_door_opened(door_id: StringName, world_position: Vector3, loudness: float) -> void:
+	_audio_presentation.play_door(world_position)
 	print("Door opened: %s (noise %.0f%%)" % [door_id, loudness * 100.0])
 	if demo_progression_rules_enabled and not demo_monster_spawned:
 		return
@@ -2568,6 +2577,7 @@ func _place_monster_deeper_in_hallway() -> void:
 	monster.start_preview_hallway_patrol(Vector3.RIGHT)
 
 func _apply_bell_debug_state() -> void:
+	_audio_presentation.set_bell_active(_bell_debug_active)
 	preview_environment.environment.background_color = BELL_BACKGROUND if _bell_debug_active else NORMAL_BACKGROUND
 	preview_environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	preview_environment.environment.ambient_light_color = BELL_AMBIENT if _bell_debug_active else NORMAL_AMBIENT

@@ -21,6 +21,20 @@ func settle(frames: int = 150) -> void:
 		await physics_frame
 
 
+func cross_entrance(player: CharacterBody3D, destination: Vector3) -> bool:
+	for i in range(300):
+		await physics_frame
+		var direction := destination - player.global_position
+		direction.y = 0
+		if direction.length() < 0.05:
+			player.velocity = Vector3.ZERO
+			return true
+		player.velocity = direction.normalized() * minf(2, direction.length() * 60)
+		player.velocity.y = -1
+		player.move_and_slide()
+	return false
+
+
 func run() -> void:
 	var scene := (load("res://scenes/demo_scene.tscn") as PackedScene).instantiate()
 	root.add_child(scene)
@@ -65,7 +79,7 @@ func run() -> void:
 		player.global_position = door.global_position - outward * 0.5
 		scene.call("_update_preview_item_encounter")
 		check(not scene.get("_victory_started"), "inside entrance cannot win")
-		player.global_position = door.global_position + outward * 1.5
+		check(await cross_entrance(player, door.global_position + outward * 1.5), "Player physically crosses opened final entrance")
 		check(scene.call("_player_has_cleared_school_entrance"), "existing crossing detector confirms escape")
 		scene.call("_update_preview_item_encounter")
 		var ending := scene.get_node("EscapeVictory")

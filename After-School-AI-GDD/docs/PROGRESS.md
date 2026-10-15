@@ -82,6 +82,8 @@
 - **Preview item minimap (2026-10-09):** Added a top-right school floor map to the preview with a blue player marker and yellow dots for all current preview items, including both keys. Each item dot disappears immediately when collected. Room outlines provide map context; the minimap has no monster marker or monster location data. This is preview UI and does not complete the production Player minimap/objective integration. Static review and whitespace checks only; a Godot run was not performed.
 - **Above-player interaction prompt (2026-10-09):** Added a world-space prompt above the player for nearby pickups and lockers. It prioritizes the nearest collectible item, matching E-key behavior, and switches to hiding when only a locker is in range. While hidden it prompts to leave the locker. This remains preview interaction UI; static diff and whitespace checks only, no Godot run performed.
 
+- **Final school polish (2026-10-15, explicit user-authorized asset/integration scope):** Added a School-triggered escape ending and scene-local audible presentation. Player movement, stamina, AI NoiseEvent policy, HUD/minimap and frozen interfaces are unchanged. Existing School final entrance detection/slam owns victory; existing Player control API disables input. Added repeatable athletics/Auditorium furniture and original procedural WAV audio. Godot 4.7.2 automated checks cover gameplay success hooks, encounters, physical routes, capture, ending/repeated Restart and audio reset; desktop WASAPI mixer output verified. See repository WORK_LOG.md for counts, checks and baseline diagnostics. Manual full-run/browser/art/audio balance review remains before any push. No push/PR/merge authorized or performed.
+
 ## Integration owner — OPEN
 
 - **Status:** Unassigned

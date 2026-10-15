@@ -4,6 +4,7 @@ extends CanvasLayer
 var _shown := false
 var _restarting := false
 var _restart: Button
+var _quit: Button
 
 
 func show_victory() -> void:
@@ -44,11 +45,11 @@ func show_victory() -> void:
 	spacer.custom_minimum_size.y = 20
 	content.add_child(spacer)
 	_restart = _button("Restart", content, _on_restart_pressed)
-	_button("Quit", content, _on_quit_pressed)
+	_quit = _button("Quit", content, _on_quit_pressed)
 	var fade := create_tween()
 	fade.tween_property(shade, "modulate:a", 1.0, 1.2)
 	fade.tween_property(content, "modulate:a", 1.0, 0.55)
-	fade.tween_callback(_restart.grab_focus)
+	fade.tween_callback(_enable_buttons)
 
 
 func _button(text: String, parent: Control, callback: Callable) -> Button:
@@ -67,8 +68,13 @@ func _button(text: String, parent: Control, callback: Callable) -> Button:
 	button.disabled = true
 	parent.add_child(button)
 	button.pressed.connect(callback)
-	get_tree().create_timer(1.75).timeout.connect(func() -> void: button.disabled = false)
 	return button
+
+
+func _enable_buttons() -> void:
+	_restart.disabled = false
+	_quit.disabled = false
+	_restart.grab_focus()
 
 
 func _on_restart_pressed() -> void:
