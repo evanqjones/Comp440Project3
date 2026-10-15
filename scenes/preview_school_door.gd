@@ -16,6 +16,9 @@ var _player: Node3D
 var _monster: Node3D
 var _panels: Array[Node3D] = []
 var _panel_bodies: Array[AnimatableBody3D] = []
+var _panel_meshes: Array[MeshInstance3D] = []
+var _door_material: StandardMaterial3D
+var _glass_material: StandardMaterial3D
 var _opened := false
 var _door_width := 1.0
 var _is_animating := false
@@ -65,6 +68,19 @@ func set_one_way_from_world_side(allowed_side: Vector3) -> void:
 	one_way = true
 	operable_side = allowed_side.normalized()
 
+func set_glass_appearance() -> void:
+	if _glass_material == null:
+		_glass_material = StandardMaterial3D.new()
+		_glass_material.albedo_color = Color(0.56, 0.82, 0.91, 0.26)
+		_glass_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_glass_material.roughness = 0.12
+		_glass_material.metallic = 0.08
+		_glass_material.emission_enabled = true
+		_glass_material.emission = Color(0.16, 0.34, 0.42)
+	for mesh in _panel_meshes:
+		if is_instance_valid(mesh):
+			mesh.material_override = _glass_material
+
 func _create_panels(width: float, height: float, thickness: float) -> void:
 	var panel_count := 2 if is_double else 1
 	var panel_width := width / float(panel_count) - 0.035
@@ -72,9 +88,9 @@ func _create_panels(width: float, height: float, thickness: float) -> void:
 	panel_mesh.size = Vector3(panel_width, height, thickness)
 	var panel_shape := BoxShape3D.new()
 	panel_shape.size = panel_mesh.size
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.34, 0.20, 0.10)
-	material.roughness = 0.82
+	_door_material = StandardMaterial3D.new()
+	_door_material.albedo_color = Color(0.34, 0.20, 0.10)
+	_door_material.roughness = 0.82
 	for index in range(panel_count):
 		var hinge := Node3D.new()
 		hinge.name = "DoorLeaf%d" % (index + 1)
@@ -89,10 +105,11 @@ func _create_panels(width: float, height: float, thickness: float) -> void:
 		_panel_bodies.append(body)
 		var mesh := MeshInstance3D.new()
 		mesh.mesh = panel_mesh
-		mesh.material_override = material
+		mesh.material_override = _door_material
 		mesh.position.x = -side * panel_width * 0.5 if is_double else panel_width * 0.5
 		mesh.position.y = height * 0.5
 		body.add_child(mesh)
+		_panel_meshes.append(mesh)
 		var collision := CollisionShape3D.new()
 		collision.shape = panel_shape
 		collision.position = mesh.position

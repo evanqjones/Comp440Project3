@@ -1946,11 +1946,27 @@ func _create_school_doors() -> void:
 		door.opened.connect(_on_preview_door_opened)
 		door.open_state_changed.connect(_on_preview_door_state_changed)
 		door.add_to_group("preview_school_doors")
+		if _is_lobby_exterior_door(String(header.name), center):
+			door.set_glass_appearance()
 		school.add_child(door)
 	var entrance_door := _find_school_entrance_door()
 	if is_instance_valid(entrance_door):
 		entrance_door.call("set_interaction_locked", true)
 	print("Preview doors created: %d" % centers.size())
+
+func _is_lobby_exterior_door(door_id: String, door_position: Vector3) -> bool:
+	var normalized_id := door_id.to_lower()
+	if (not normalized_id.contains("lobby") and not normalized_id.contains("outside")) or normalized_id.contains("main office"):
+		return false
+	var lobby_floor := _find_room_floor(school, "lobby floor")
+	if lobby_floor == null or lobby_floor.mesh == null:
+		return false
+	var bounds: AABB = lobby_floor.global_transform * lobby_floor.mesh.get_aabb()
+	var edge_distance := minf(
+		minf(absf(door_position.x - bounds.position.x), absf(door_position.x - bounds.end.x)),
+		minf(absf(door_position.z - bounds.position.z), absf(door_position.z - bounds.end.z))
+	)
+	return edge_distance <= 1.6
 
 func _collect_door_headers(node: Node, result: Array[MeshInstance3D]) -> void:
 	if node is MeshInstance3D and node.name.to_lower().contains("door header wall infill"):
