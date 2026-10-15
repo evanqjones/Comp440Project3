@@ -5,8 +5,7 @@ extends Node
 @export_range(0.25, 5.0, 0.25) var preview_noise_attention_seconds: float = 1.5
 @export_range(1.0, 15.0, 0.5) var preview_chase_speed: float = 6.5
 @export_range(0.1, 3.0, 0.1) var preview_lose_sight_grace: float = 0.8
-@export_range(0.5, 10.0, 0.1) var preview_pickup_turn_seconds: float = 3.0
-@export_range(0.5, 10.0, 0.1) var preview_pickup_pause_seconds: float = 3.0
+@export_range(0.0, 10.0, 0.1) var preview_pickup_delay_seconds: float = 2.0
 
 var _monster: CharacterBody3D
 var _player: CharacterBody3D
@@ -64,19 +63,19 @@ func begin_guard(room_bounds: AABB, stage_position: Vector3) -> void:
 func begin_escape() -> void:
 	if not _active:
 		return
-	_phase = &"pickup_turn"
-	_phase_timer = preview_pickup_turn_seconds
+	_phase = &"pickup_delay"
+	_phase_timer = preview_pickup_delay_seconds
 	_lost_sight_time = 0.0
 	_last_path_target = Vector3(INF, INF, INF)
 	_monster.call("_set_state", &"PATROL")
 
 
-func restart_after_capture(restart_pickup_turn: bool) -> void:
+func restart_after_capture(restart_chase_delay: bool) -> void:
 	if not _active or _starting_room_bounds.size == Vector3.ZERO:
 		return
 	finish_encounter()
 	begin_guard(_starting_room_bounds, _starting_stage_position)
-	if restart_pickup_turn:
+	if restart_chase_delay:
 		begin_escape()
 
 
@@ -128,15 +127,8 @@ func _physics_process(delta: float) -> void:
 			_update_guard(delta)
 		&"spotlight_chase":
 			_update_spotlight_chase(delta)
-		&"pickup_turn":
+		&"pickup_delay":
 			_face_direction(_player.global_position - _monster.global_position, delta)
-			_monster.velocity = Vector3.ZERO
-			_monster.move_and_slide()
-			_phase_timer -= delta
-			if _phase_timer <= 0.0:
-				_phase = &"pickup_pause"
-				_phase_timer = preview_pickup_pause_seconds
-		&"pickup_pause":
 			_monster.velocity = Vector3.ZERO
 			_monster.move_and_slide()
 			_phase_timer -= delta
