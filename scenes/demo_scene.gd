@@ -47,6 +47,8 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if _victory_started:
+		return
 	_track_last_collected_item_checkpoint()
 	if _final_bell_started and not _demo_final_chase_positions_saved:
 		_demo_final_chase_positions_saved = true
@@ -96,6 +98,16 @@ func _process(delta: float) -> void:
 		bell_status.text = "BELL ACTIVE | %.0f seconds remaining" % float(snapshot.get("remaining_seconds"))
 	else:
 		bell_status.text = "BELL QUIET | Automatic schedule"
+
+func _complete_final_escape() -> void:
+	if _victory_started:
+		return
+	# Final Bell belongs to this integration; retain progression and checkpoints.
+	school_bell.call("stop_scheduling")
+	_guaranteed_bell_delays.clear()
+	_demo_capture_respawn_timer = 0.0
+	super._complete_final_escape()
+
 
 func _demo_required_item_count() -> int:
 	var count := 0
