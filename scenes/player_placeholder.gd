@@ -24,6 +24,7 @@ const PREVIEW_TARGET_ID_META: StringName = &"player_preview_target_id"
 @onready var interaction_prompt: Label = $InteractionPrompt/Label
 @onready var capture_status: Label = $InteractionPrompt/CaptureStatus
 @onready var stamina_hud: CanvasLayer = $StaminaHUD
+@onready var footsteps = $Footsteps
 
 signal noise_emitted(event: NoiseEvent)
 
@@ -120,6 +121,11 @@ func _physics_process(delta: float) -> void:
         velocity.z = move_toward(velocity.z, 0.0, ground_acceleration * delta)
 
     move_and_slide()
+    var actual_velocity := get_real_velocity()
+    var actual_speed := Vector2(actual_velocity.x, actual_velocity.z).length()
+    footsteps.update_movement(actual_speed * delta,
+        _input_enabled and is_visible_in_tree() and is_on_floor() and actual_speed > 0.15 and input_axis.length_squared() > 0.0,
+        is_sprinting, _is_crouching)
     _update_movement_state(is_sprinting)
     if _input_enabled and _is_crouching:
         _movement_state = &"crouching"
@@ -131,6 +137,8 @@ func _physics_process(delta: float) -> void:
 func set_input_enabled(enabled: bool) -> void:
     super.set_input_enabled(enabled)
     if not _input_enabled:
+        if is_instance_valid(footsteps):
+            footsteps.reset_steps()
         velocity.x = 0.0
         velocity.z = 0.0
         _movement_state = &"idle"
