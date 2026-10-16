@@ -305,6 +305,9 @@ func can_capture_player() -> bool:
 	return _post_teleport_capture_delay <= 0.0
 
 func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item_position: Vector3, points: Array[Vector3]) -> void:
+	reset_preview_weight_escape_state()
+	# Item encounters take ownership from a bell chase until the scene ends them.
+	set_preview_bell_active(false)
 	if _preview_book_sink_active:
 		if is_instance_valid(_preview_book_sink_tween):
 			_preview_book_sink_tween.kill()
@@ -444,7 +447,7 @@ func begin_preview_ruler_hall_event(classroom_a_spawn: Vector3, science_spawn: V
 	_preview_window_stalk_active = false
 	_preview_window_slide_active = false
 	_preview_book_sink_active = false
-	_preview_weight_escape_active = false
+	reset_preview_weight_escape_state()
 	_preview_item_encounter = &"ruler_hall"
 	_preview_item_points.clear()
 	_preview_ruler_hall_active = true
@@ -582,6 +585,33 @@ func begin_preview_weight_escape(destination: Vector3) -> void:
 func is_preview_weight_escape_active() -> bool:
 	return _preview_weight_escape_active
 
+func reset_preview_weight_escape_state() -> void:
+	_preview_weight_escape_active = false
+	_weight_escape_completed = false
+	_preview_weight_escape_target = Vector3.ZERO
+
+func teleport_after_preview_weight_collection(destination: Vector3, in_hallway: bool) -> void:
+	reset_preview_weight_escape_state()
+	_preview_item_encounter = &""
+	_preview_bell_active = false
+	_preview_item_removed = false
+	_preview_window_stalk_active = false
+	_preview_window_slide_active = false
+	_preview_brush_chase_active = false
+	_weight_investigation_active = false
+	_regular_follow_active = false
+	_regular_follow_lost_time = 0.0
+	_lost_sight_time = 0.0
+	visible = true
+	collision_layer = 2
+	collision_mask = 1
+	global_position = destination
+	velocity = Vector3.ZERO
+	_teleport_animation_time = 0.9
+	_post_teleport_capture_delay = PREVIEW_POST_TELEPORT_CAPTURE_DELAY
+	set_physics_process(true)
+	set_preview_spawn_behavior(in_hallway)
+
 func _start_preview_book_sink() -> void:
 	if _preview_book_sink_active:
 		return
@@ -691,6 +721,50 @@ func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> v
 	move_and_slide()
 	look_at(global_position + direction, Vector3.UP)
 
+func _move_book_along_shelves(target: Vector3, delta: float) -> void:
+	_preview_item_refresh = maxf(0.0, _preview_item_refresh - delta)
+	if _preview_item_refresh <= 0.0 or _preview_item_last_navigation_target.distance_to(target) > 0.35:
+		_navigation_agent.target_position = target
+		_preview_item_last_navigation_target = target
+		_preview_item_refresh = 0.25
+	var direction := _navigation_agent.get_next_path_position() - global_position
+	direction.y = 0.0
+	if _navigation_agent.is_navigation_finished() or direction.length_squared() < 0.01:
+		var navigation_map := _navigation_agent.get_navigation_map()
+		var route := NavigationServer3D.map_get_path(navigation_map, global_position, target, true)
+		if route.size() > 1:
+			direction = route[1] - global_position
+			direction.y = 0.0
+		else:
+			var best_route: PackedVector3Array = PackedVector3Array()
+			var best_cost := INF
+			for waypoint in _preview_item_points:
+				var route_to_waypoint := NavigationServer3D.map_get_path(navigation_map, global_position, waypoint, true)
+				if route_to_waypoint.size() < 2:
+					continue
+				var route_to_player := NavigationServer3D.map_get_path(navigation_map, waypoint, target, true)
+				var cost := _navigation_path_length(route_to_waypoint) + _navigation_path_length(route_to_player)
+				if cost < best_cost:
+					best_cost = cost
+					best_route = route_to_waypoint
+			if best_route.size() > 1:
+				direction = best_route[1] - global_position
+				direction.y = 0.0
+	if direction.length_squared() < 0.01:
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
+	direction = direction.normalized()
+	velocity = direction * preview_book_follow_speed
+	move_and_slide()
+	look_at(global_position + direction, Vector3.UP)
+
+func _navigation_path_length(path: PackedVector3Array) -> float:
+	var length := 0.0
+	for index in range(1, path.size()):
+		length += path[index - 1].distance_to(path[index])
+	return length
+
 func _turn_science_toward(source_position: Vector3) -> void:
 	if _preview_item_encounter != &"science_classroom" or _preview_bell_active:
 		return
@@ -730,9 +804,9 @@ func _update_preview_item_encounter(delta: float) -> void:
 			var chase_target := _preview_clamp_to_encounter_room(_player_target.global_position)
 			var distance_to_player := global_position.distance_to(chase_target)
 			if distance_to_player > 0.7:
-				# Follow the baked route through the shelf maze while collision is
-				# disabled for this encounter so the body cannot snag on shelf corners.
-				_move_preview_item_toward(chase_target, preview_book_follow_speed, delta)
+				# Keep the monster on navigation routes through the shelves. If the
+				# agent ends early, take a room waypoint and retry the player's route.
+				_move_book_along_shelves(chase_target, delta)
 			else:
 				velocity = Vector3.ZERO
 				move_and_slide()
@@ -1190,6 +1264,7 @@ func set_preview_bell_active(active: bool) -> void:
 	_set_state(&"BELL_CHASE" if active else &"PATROL")
 
 func begin_preview_bell_phase_chase() -> void:
+	reset_preview_weight_escape_state()
 	_preview_final_bell_tail_chase = false
 	_preview_final_bell_delay_remaining = preview_bell_start_delay
 	_bell_path_refresh = 0.0
@@ -1198,12 +1273,17 @@ func begin_preview_bell_phase_chase() -> void:
 	_set_state(&"BELL_CHASE")
 
 func begin_preview_final_bell_chase() -> void:
+	reset_preview_weight_escape_state()
 	_preview_final_bell_tail_chase = true
 	_preview_final_bell_delay_remaining = preview_final_bell_start_delay
 	_preview_final_bell_chase_start_notified = false
 	_bell_path_refresh = 0.0
 	_has_bell_target = false
 	set_preview_bell_active(true)
+	# The final chase ignores solid geometry so doorways cannot trap it. Capture
+	# still uses the chase's proximity checks, independent of body collisions.
+	collision_layer = 0
+	collision_mask = 0
 	_set_state(&"BELL_CHASE")
 
 func _physics_process(delta: float) -> void:
@@ -1223,7 +1303,7 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
-	if _preview_bell_active:
+	if _preview_bell_active and _preview_item_encounter == &"":
 		_update_bell_chase()
 		return
 
@@ -1293,7 +1373,7 @@ func _physics_process(delta: float) -> void:
 		_update_short_chase(delta)
 		return
 
-	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"] and not (_preview_item_encounter == &"" and regular_teleport_chase_delayed):
+	if _can_see_player() and (_preview_item_encounter == &"" or _preview_item_encounter in [&"snack", &"science_classroom"]) and not regular_teleport_chase_delayed:
 		var snack_is_peeking := _preview_item_encounter != &"snack" or _preview_snack_phase == &"peeking"
 		if snack_is_peeking and (_preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled)):
 			if _preview_item_encounter == &"snack":
@@ -1307,7 +1387,7 @@ func _physics_process(delta: float) -> void:
 		_update_preview_item_encounter(delta)
 		return
 
-	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"] and not regular_teleport_chase_delayed:
+	if _can_see_player() and (_preview_item_encounter == &"" or _preview_item_encounter in [&"snack", &"science_classroom"]) and not regular_teleport_chase_delayed:
 		_set_state(&"SHORT_CHASE")
 		_lost_sight_time = 0.0
 		_update_short_chase(delta)
@@ -1493,9 +1573,12 @@ func _update_bell_chase() -> void:
 		_update_squeeze(Vector3.ZERO, get_physics_process_delta_time())
 		return
 
-	var direction := _navigation_agent.get_next_path_position() - global_position
+	# The final chase has collision disabled so it can pass through doors. Follow
+	# the chase target directly as well: a navmesh route can still be blocked by a
+	# closed doorway or missing link even when the CharacterBody is a ghost.
+	var direction := chase_target - global_position if _preview_final_bell_tail_chase else _navigation_agent.get_next_path_position() - global_position
 	direction.y = 0.0
-	if direction.length_squared() < 0.01:
+	if direction.length_squared() < 0.01 or (not _preview_final_bell_tail_chase and _navigation_agent.is_navigation_finished()):
 		velocity = Vector3.ZERO
 		move_and_slide()
 		return
@@ -1717,7 +1800,10 @@ func _update_short_chase(delta: float) -> void:
 				lost_track_relocation_requested.emit(_player_target.global_position)
 			return
 
-	var direction := _player_target.global_position - global_position
+	var chase_target := _player_target.global_position
+	if _preview_item_encounter != &"":
+		chase_target = _preview_clamp_to_encounter_room(chase_target)
+	var direction := chase_target - global_position
 	direction.y = 0.0
 	if direction.length_squared() < 0.01:
 		velocity = Vector3.ZERO
@@ -1728,8 +1814,8 @@ func _update_short_chase(delta: float) -> void:
 	if _preview_item_encounter == &"snack":
 		_preview_snack_path_refresh -= delta
 		if (_preview_snack_path_refresh <= 0.0
-				or _navigation_agent.target_position.distance_to(_player_target.global_position) > 0.5):
-			_navigation_agent.target_position = _player_target.global_position
+				or _navigation_agent.target_position.distance_to(chase_target) > 0.5):
+			_navigation_agent.target_position = chase_target
 			_preview_snack_path_refresh = 0.2
 		direction = _navigation_agent.get_next_path_position() - global_position
 		direction.y = 0.0
@@ -1747,6 +1833,8 @@ func _update_short_chase(delta: float) -> void:
 	velocity = direction * chase_speed
 	var centerline_is_clear := _is_centerline_clear(direction)
 	move_and_slide()
+	if _preview_item_encounter != "":
+		global_position = _preview_clamp_to_encounter_room(global_position)
 	look_at(global_position + direction, Vector3.UP)
 	if _preview_item_encounter == &"snack":
 		var squeezed_against_opening := low_header_ahead

@@ -310,6 +310,12 @@ func _finish_demo_capture_respawn() -> void:
 func _try_spawn_demo_monster_after_keys() -> void:
 	if not _demo_keys_unlocked or demo_monster_spawned:
 		return
+	# If the player entered an interaction room as the keys were collected, make
+	# that encounter the monster's first appearance instead of sending it to the hall.
+	if (_active_preview_encounter != &"" or _science_window_spawn_pending
+			or monster.is_preview_window_stalking()):
+		_activate_demo_monster()
+		return
 	var candidates: Array[Node3D] = []
 	for marker in _spawn_markers:
 		if _is_hallway_spawn(marker):
