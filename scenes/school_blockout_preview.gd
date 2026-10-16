@@ -1151,11 +1151,14 @@ func _try_collect_preview_item() -> bool:
 	return true
 
 func _try_awaken_monster_for_first_interaction(force: bool = false) -> void:
-	if _monster_awakened or not _first_item_collected:
+	if not _first_item_collected:
 		return
 	if not force and _active_preview_encounter == &"":
 		return
 	_monster_awakened = true
+	# The hallway reveal deliberately makes the monster dormant when it vanishes.
+	# Re-enable it whenever an actual interaction starts, even if it was awakened
+	# earlier in the run.
 	monster.set_preview_dormant(false)
 
 func _open_weight_escape_route(locker_bounds: AABB, gym_bounds: AABB) -> void:
@@ -1907,15 +1910,16 @@ func _try_science_window_stalk_spawn() -> void:
 			lab_bounds.position.y + lab_bounds.size.y,
 			lab_bounds.position.z - 0.75
 		)
-		var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
-		destination = NavigationServer3D.map_get_closest_point(navigation_map, window_position)
-		if destination.distance_to(window_position) > 2.0 or _point_inside_room(destination, lab_bounds):
-			return
+		# The authored north-window lurk point is outside the school navmesh by
+		# design, so snapping it to navigation can discard the spawn entirely.
+		destination = window_position + Vector3.BACK * 0.75
 	if destination == Vector3.ZERO:
 		return
 	# This is an authored window reveal. Generic teleports reject paths crossing
 	# window glass, which can also reject this deliberate spawn at the window.
 	# Place the monster at the outside lurk marker directly, then keep it still.
+	monster.end_preview_item_encounter()
+	monster.set_preview_dormant(false)
 	if monster.force_preview_interaction_spawn(destination):
 		var lab_floor: MeshInstance3D = _find_room_floor(school, "lab room floor")
 		if lab_floor != null and lab_floor.mesh != null:
