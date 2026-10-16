@@ -1,8 +1,9 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/school_blockout_preview.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player_placeholder.tscn" id="2_player"]
 [ext_resource type="PackedScene" path="res://scenes/monster_placeholder.tscn" id="3_monster"]
+[ext_resource type="PackedScene" path="res://scenes/pixelation_filter.tscn" id="4_pixelation"]
 
 [sub_resource type="Environment" id="Environment_preview"]
 background_mode = 1
@@ -48,6 +49,8 @@ rotation_degrees = Vector3(-48, -25, 0)
 light_color = Color(0.23, 0.34, 0.68, 1)
 light_energy = 0.17
 shadow_enabled = true
+
+[node name="PixelationFilter" parent="." instance=ExtResource("4_pixelation")]
 
 [node name="DebugOverlay" type="CanvasLayer" parent="."]
 

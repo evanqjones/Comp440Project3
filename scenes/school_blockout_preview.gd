@@ -160,6 +160,8 @@ var _victory_started := false
 var _science_encounter_started := false
 var _science_spawn_pending := false
 var _science_window_spawn_pending := false
+var _player_was_in_lab_room := false
+var _science_window_stalk_triggered := false
 var _locker_spots: Array[Dictionary] = []
 var _active_locker_index := -1
 var _player_locker_return_position := Vector3.ZERO
@@ -238,13 +240,14 @@ func _process(delta: float) -> void:
 	if _hallway_intro_active:
 		_apply_hallway_intro_lights()
 	_update_preview_item_encounter()
+	_update_lab_room_entry_reveal()
 	_update_first_hallway_monster_intro(delta)
 	_update_locker_prompt()
 	_update_character_interaction_prompt()
 	_update_ruler_hall_event(delta)
 	_try_science_room_encounter_spawn()
 	_try_science_window_stalk_spawn()
-	if _bell_hall_spawn_pending and _bell_debug_active and not _final_bell_started:
+	if _bell_hall_spawn_pending and _bell_debug_active and _active_preview_encounter == &"" and not _final_bell_started:
 		_bell_hall_spawn_pending = not _start_bell_chase_from_hallway()
 	_camera_hallway_spawn_valid = _update_follow_camera_hallway_spawn()
 	if is_instance_valid(_camera_hallway_spawn):
@@ -698,9 +701,6 @@ func _update_preview_item_encounter() -> void:
 		else:
 			item_help.text = "Escape school"
 		return
-	if _bell_debug_active:
-		item_help.text = "Hide (get in a lit room)"
-		return
 	if _brush_escape_active:
 		if _player_has_reached_artroom_hallway():
 			_brush_escape_active = false
@@ -732,6 +732,7 @@ func _update_preview_item_encounter() -> void:
 			_science_encounter_started = true
 			_science_spawn_pending = true
 		_active_preview_encounter = &"science_classroom"
+		_claim_item_encounter_priority()
 		_try_awaken_monster_for_first_interaction()
 		if _science_spawn_pending:
 			item_help.text = "Science Classroom encounter: the monster appears in the southeast corner when it is off-camera"
@@ -766,12 +767,31 @@ func _update_preview_item_encounter() -> void:
 		if is_instance_valid(_auditorium_encounter):
 			_auditorium_encounter.call("finish_encounter")
 		monster.end_preview_item_encounter()
+		if _bell_debug_active:
+			monster.set_preview_bell_active(true)
+			item_help.text = "Hide (get in a lit room)"
+			return
 		if not _collected_preview_items.has(&"school_keys"):
 			item_help.text = "Get school keys"
 		elif demo_progression_rules_enabled and _demo_all_required_items_collected() and not _collected_preview_items.has(&"front_door_key"):
 			item_help.text = "Get the front door key"
 		else:
 			item_help.text = "Collected your missing items"
+		return
+	if current_item.get("id", &"") == &"brush":
+		# Keep the Artroom encounter dormant until the Paintbrush is collected.
+		# Entering the room should not move the monster onto the ceiling or claim
+		# encounter priority; pickup starts the ceiling searchlight sequence.
+		if _room_entry_warning_item != &"":
+			_cancel_room_entry_warning()
+		if _active_preview_encounter != &"":
+			monster.end_preview_item_encounter()
+			_active_preview_encounter = &""
+		var brush_marker := _item_markers.get(&"brush") as Node3D
+		if is_instance_valid(brush_marker) and player.global_position.distance_to(brush_marker.global_position) <= 1.65:
+			item_help.text = "E: collect Paintbrush"
+		else:
+			item_help.text = "Find the Paintbrush in the Artroom"
 		return
 	var encounter: StringName = current_item["encounter"]
 	if _active_preview_encounter != encounter:
@@ -780,6 +800,7 @@ func _update_preview_item_encounter() -> void:
 		if _room_entry_warning_item != item_id:
 			_start_room_entry_warning(item_id, warning_room, _item_room_bounds[warning_room])
 		_active_preview_encounter = encounter
+		_claim_item_encounter_priority()
 		_try_awaken_monster_for_first_interaction()
 		var bounds: AABB = _item_room_bounds[current_item["room"]]
 		var marker := _item_markers[current_item["id"]] as Node3D
@@ -790,6 +811,8 @@ func _update_preview_item_encounter() -> void:
 				monster.global_position = points[0]
 		if encounter == &"book":
 			monster.global_position = _library_northwest_spawn(bounds)
+		elif encounter != &"weight" and not points.is_empty():
+			monster.global_position = points[0]
 		monster.begin_preview_item_encounter(encounter, bounds, marker.global_position, points)
 		if encounter == &"microphone":
 			var stage_position := Vector3(
@@ -823,6 +846,13 @@ func _update_preview_item_encounter() -> void:
 		item_help.text = "%s encounter | E: collect %s | E near a locker to hide" % [_encounter_hint(encounter), current_item["name"]]
 	else:
 		item_help.text = "%s | Find the %s circle" % [_encounter_hint(encounter), current_item["name"]]
+
+func _claim_item_encounter_priority() -> void:
+	# A room interaction owns the monster until its scripted encounter ends.
+	# Clear any queued bell reveal and pause the monster's generic bell chase.
+	_bell_hall_spawn_pending = false
+	if _bell_debug_active:
+		monster.set_preview_bell_active(false)
 
 func _item_encounter_points(bounds: AABB, encounter: StringName) -> Array[Vector3]:
 	if encounter == &"snack":
@@ -1115,15 +1145,16 @@ func _try_collect_preview_item() -> bool:
 	player.noise_emitted.emit(NoiseEvent.new(player.global_position, NoiseEvent.NoiseLevel.LOUD, item_id))
 	monster.on_preview_item_collected(item_id)
 	if item_id == &"weight" and _item_room_bounds.has(&"gym"):
-		var locker_bounds: AABB = _item_room_bounds.get(&"locker_room", AABB())
-		var gym_bounds: AABB = _item_room_bounds[&"gym"]
-		_open_weight_escape_route(locker_bounds, gym_bounds)
-		monster.begin_preview_weight_escape(_weight_escape_destination(gym_bounds))
+		monster.end_preview_item_encounter()
+		monster.reset_preview_weight_escape_state()
+		_active_preview_encounter = &""
+		_teleport_monster_after_weight_collection()
 		_try_awaken_monster_for_first_interaction(true)
 	if item_id == &"lab_coat":
 		_start_lab_coat_window_slide()
 		_try_awaken_monster_for_first_interaction(true)
 	if item_id == &"microphone":
+		_claim_item_encounter_priority()
 		_set_interaction_room_lights_dark(&"auditorium", true)
 		_microphone_escape_active = true
 		_microphone_escape_finish_started = false
@@ -1150,12 +1181,25 @@ func _try_collect_preview_item() -> bool:
 	item_help.text = "%s collected" % nearest_item["name"]
 	return true
 
+func _teleport_monster_after_weight_collection() -> void:
+	var candidates: Array[Node3D] = _spawn_markers.duplicate()
+	if _camera_hallway_spawn_valid and is_instance_valid(_camera_hallway_spawn):
+		candidates.append(_camera_hallway_spawn)
+	if candidates.is_empty():
+		return
+	candidates.shuffle()
+	var marker := candidates[0]
+	monster.teleport_after_preview_weight_collection(marker.global_position, _is_hallway_spawn(marker))
+
 func _try_awaken_monster_for_first_interaction(force: bool = false) -> void:
-	if _monster_awakened or not _first_item_collected:
+	if not _first_item_collected:
 		return
 	if not force and _active_preview_encounter == &"":
 		return
 	_monster_awakened = true
+	# The hallway reveal deliberately makes the monster dormant when it vanishes.
+	# Re-enable it whenever an actual interaction starts, even if it was awakened
+	# earlier in the run.
 	monster.set_preview_dormant(false)
 
 func _open_weight_escape_route(locker_bounds: AABB, gym_bounds: AABB) -> void:
@@ -1412,6 +1456,7 @@ func _find_auditorium_exit_door() -> Node3D:
 	return best_door
 
 func _start_artroom_brush_escape() -> void:
+	_claim_item_encounter_priority()
 	var bounds: AABB = _item_room_bounds.get(&"artroom", AABB())
 	if bounds.size == Vector3.ZERO:
 		push_warning("Brush collected, but the Artroom bounds were not available.")
@@ -1814,6 +1859,7 @@ func _start_ruler_hall_event() -> void:
 	if a_spawn.distance_to(a_desired) > 2.0 or science_spawn.distance_to(science_desired) > 2.0 or beyond_science.distance_to(beyond_science_desired) > 2.0 or beyond_a.distance_to(beyond_a_desired) > 2.0 or science_corner.distance_to(science_corner_desired) > 2.0 or a_corner.distance_to(a_corner_desired) > 2.0:
 		push_warning("Ruler encounter navigation points could not be placed on the school navigation mesh.")
 		return
+	_claim_item_encounter_priority()
 	monster.begin_preview_ruler_hall_event(a_spawn, science_spawn, beyond_science, beyond_a, science_corner, a_corner)
 	_ruler_hall_event_active = true
 	_ruler_hall_elapsed = 0.0
@@ -1885,7 +1931,7 @@ func _update_ruler_hall_event(delta: float) -> void:
 		item_help.text = "The monster passed the lockers | Ruler encounter complete"
 
 func _try_science_window_stalk_spawn() -> void:
-	if not _science_window_spawn_pending or _bell_debug_active:
+	if not _science_window_spawn_pending or _science_window_stalk_triggered:
 		return
 	var lab_windows: Array = _window_lurk_markers.get(&"lab_room", [])
 	var north_window: Node3D
@@ -1894,36 +1940,43 @@ func _try_science_window_stalk_spawn() -> void:
 		if is_instance_valid(marker) and String(marker.get_meta("window_id", "")) == "lab_room_north":
 			north_window = marker
 			break
-	var destination := Vector3.ZERO
-	if is_instance_valid(north_window):
-		destination = north_window.global_position
-	else:
-		var lab_floor := _find_room_floor(school, "lab room floor")
-		if lab_floor == null or lab_floor.mesh == null:
-			return
-		var lab_bounds: AABB = lab_floor.global_transform * lab_floor.mesh.get_aabb()
-		var window_position := Vector3(
-			lab_bounds.position.x + lab_bounds.size.x * 0.5,
-			lab_bounds.position.y + lab_bounds.size.y,
-			lab_bounds.position.z - 0.75
-		)
-		var navigation_map: RID = monster.get_node("NavigationAgent3D").get_navigation_map()
-		destination = NavigationServer3D.map_get_closest_point(navigation_map, window_position)
-		if destination.distance_to(window_position) > 2.0 or _point_inside_room(destination, lab_bounds):
-			return
-	if destination == Vector3.ZERO:
+	if not is_instance_valid(north_window):
 		return
-	if monster.try_preview_offscreen_teleport(destination, player.player_camera, false, 0.5):
-		var lab_floor: MeshInstance3D = _find_room_floor(school, "lab room floor")
+	var destination := north_window.global_position
+	var lab_floor := _find_room_floor(school, "lab room floor")
+	if lab_floor == null or lab_floor.mesh == null:
+		return
+	var lab_bounds: AABB = lab_floor.global_transform * lab_floor.mesh.get_aabb()
+	if _point_inside_room(destination, lab_bounds):
+		push_warning("Lab Room north-window marker is inside the room; skipping the window reveal.")
+		return
+	_claim_item_encounter_priority()
+	# This is an authored window reveal. Generic teleports reject paths crossing
+	# window glass, which can also reject this deliberate spawn at the window.
+	# Place the monster at the outside lurk marker directly, then keep it still.
+	monster.end_preview_item_encounter()
+	monster.set_preview_dormant(false)
+	if monster.force_preview_interaction_spawn(destination):
 		if lab_floor != null and lab_floor.mesh != null:
-			var lab_bounds: AABB = lab_floor.global_transform * lab_floor.mesh.get_aabb()
 			monster.start_preview_window_stalk(Vector3.FORWARD, lab_bounds.position + lab_bounds.size * 0.5)
 		else:
 			monster.start_preview_window_stalk(Vector3.FORWARD)
 		_science_window_spawn_pending = false
+		_science_window_stalk_triggered = true
 		print("Monster is holding still beyond the Lab Room north window")
 		if _collected_preview_items.has(&"lab_coat"):
 			_start_lab_coat_window_slide()
+
+func _update_lab_room_entry_reveal() -> void:
+	var lab_bounds: AABB = _item_room_bounds.get(&"lab_room", AABB())
+	var player_in_lab := lab_bounds.size != Vector3.ZERO and _point_inside_room(player.global_position, lab_bounds)
+	var entered_lab := player_in_lab and not _player_was_in_lab_room
+	_player_was_in_lab_room = player_in_lab
+	if not entered_lab or _science_window_stalk_triggered or _collected_preview_items.has(&"lab_coat"):
+		return
+	if demo_progression_rules_enabled and not demo_monster_spawned and not _first_item_collected:
+		return
+	_science_window_spawn_pending = true
 
 func _start_lab_coat_window_slide() -> void:
 	if not monster.is_preview_window_stalking():
@@ -1948,7 +2001,7 @@ func _start_lab_coat_window_slide() -> void:
 		return
 
 func _try_science_room_encounter_spawn() -> void:
-	if not _science_spawn_pending or _collected_preview_items.has(&"lab_coat") or _bell_debug_active:
+	if not _science_spawn_pending or _collected_preview_items.has(&"lab_coat"):
 		return
 	var science_bounds: AABB = _item_room_bounds.get(&"science_classroom", AABB())
 	if science_bounds.size == Vector3.ZERO:
@@ -1957,6 +2010,7 @@ func _try_science_room_encounter_spawn() -> void:
 	if points.is_empty():
 		return
 	if monster.force_preview_interaction_spawn(points[0]):
+		_claim_item_encounter_priority()
 		var lab_coat_marker := _item_markers.get(&"lab_coat") as Node3D
 		var coat_position := lab_coat_marker.global_position if is_instance_valid(lab_coat_marker) else points[0]
 		monster.begin_preview_item_encounter(&"science_classroom", science_bounds, coat_position, points)
@@ -1989,7 +2043,9 @@ func _build_school_navigation() -> void:
 	nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
 	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav_mesh.geometry_collision_mask = 1
-	nav_mesh.agent_radius = 0.1
+	# Match the navmesh clearance to the monster capsule. The previous 0.1 m
+	# radius let library paths skim shelf corners that the 0.42 m body cannot fit.
+	nav_mesh.agent_radius = 0.42
 	nav_mesh.agent_height = 1.8
 	nav_mesh.agent_max_climb = 0.2
 	nav_mesh.cell_size = 0.1
@@ -2083,10 +2139,10 @@ func _create_window_lurk_markers() -> void:
 		match window["side"]:
 			"north":
 				window_world.z = bounds.position.z
-				outside_direction = Vector3.BACK
+				outside_direction = Vector3.FORWARD
 			"south":
 				window_world.z = bounds.end.z
-				outside_direction = Vector3.FORWARD
+				outside_direction = Vector3.BACK
 			"west":
 				window_world.x = bounds.position.x
 				outside_direction = Vector3.LEFT
@@ -2094,10 +2150,16 @@ func _create_window_lurk_markers() -> void:
 				window_world.x = bounds.end.x
 				outside_direction = Vector3.RIGHT
 		window_world.y = bounds.position.y + bounds.size.y
-		var desired_position := window_world + outside_direction * 0.75
-		var hallway_position: Vector3 = NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
-		if hallway_position.distance_to(desired_position) > 1.25 or _position_in_excluded_floor(hallway_position, rejected_floors):
-			continue
+		var desired_position := window_world + outside_direction * (1.0 if window["id"] == &"lab_room_north" else 0.75)
+		# The Lab Room reveal is authored beyond the glass, even though its point
+		# intentionally sits outside the walkable navigation mesh.
+		var hallway_position := desired_position
+		if window["id"] != &"lab_room_north":
+			hallway_position = NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
+			if (hallway_position.distance_to(desired_position) > 1.25
+					or _point_inside_room(hallway_position, bounds)
+					or _position_in_excluded_floor(hallway_position, rejected_floors)):
+				continue
 		var room_id: StringName = window["room"]
 		var marker := Node3D.new()
 		marker.name = "WindowLurk_" + String(window["id"])
@@ -2105,7 +2167,8 @@ func _create_window_lurk_markers() -> void:
 		marker.set_meta("window_id", window["id"])
 		marker.set_meta("lurk_angle", atan2(hallway_position.z - (bounds.position.z + bounds.size.z * 0.5), hallway_position.x - (bounds.position.x + bounds.size.x * 0.5)))
 		marker.add_to_group("preview_window_lurk_points")
-		marker.add_to_group("preview_bell_lurk_points")
+		if window["id"] != &"lab_room_north":
+			marker.add_to_group("preview_bell_lurk_points")
 		var tile := MeshInstance3D.new()
 		tile.name = "PurpleWindowLurkTile"
 		var tile_mesh := QuadMesh.new()
@@ -2329,7 +2392,7 @@ func _relocate_after_lost_track(source_position: Vector3) -> void:
 	_relocate_monster_to_nearest_spawn(source_position, false)
 
 func _relocate_monster_to_nearest_spawn(source_position: Vector3, resume_investigation: bool) -> void:
-	if _bell_debug_active or monster.current_state not in [&"PATROL", &"INVESTIGATE"]:
+	if _bell_debug_active or _active_preview_encounter != &"" or monster.current_state not in [&"PATROL", &"INVESTIGATE"]:
 		return
 	if _science_spawn_pending:
 		_try_science_room_encounter_spawn()
