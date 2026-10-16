@@ -56,6 +56,7 @@ func restart_after_capture() -> void:
 
 
 func _place_monster_for_search() -> void:
+	_monster.call("reset_preview_brush_chase")
 	_monster.global_position = Vector3(
 		_room_bounds.position.x + _room_bounds.size.x * 0.5,
 		_ceiling_height,

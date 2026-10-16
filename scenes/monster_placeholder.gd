@@ -265,7 +265,10 @@ func _face_model_toward_player() -> void:
 	to_player.y = 0.0
 	if to_player.length_squared() < 0.001:
 		return
-	look_at(global_position + to_player, Vector3.UP)
+	if _preview_brush_chase_active:
+		rotation = Vector3(PI, atan2(to_player.x, to_player.z), 0.0)
+	else:
+		look_at(global_position + to_player, Vector3.UP)
 	# The imported model faces +Z; keep its authored half-turn while the body
 	# continuously tracks the player's actual position during chase animations.
 	_animated_visual.rotation.y = PI
@@ -393,12 +396,23 @@ func begin_preview_brush_chase() -> void:
 	_preview_player_hidden = false
 	visible = true
 	global_position.y = _player_target.global_position.y
-	global_rotation = Vector3(0.0, global_rotation.y, 0.0)
+	var to_player := _player_target.global_position - global_position
+	to_player.y = 0.0
+	if to_player.length_squared() > 0.001:
+		global_rotation = Vector3(PI, atan2(to_player.x, to_player.z), 0.0)
 	collision_layer = 2
 	collision_mask = 1
 	velocity = Vector3.ZERO
 	set_physics_process(true)
 	_set_state(&"SHORT_CHASE")
+
+func reset_preview_brush_chase() -> void:
+	_preview_brush_chase_active = false
+	_preview_player_hidden = false
+	_preview_item_encounter = &"brush"
+	velocity = Vector3.ZERO
+	if current_state == &"SHORT_CHASE":
+		_set_state(&"PATROL")
 
 
 func set_preview_brush_searchlight_direction(direction: Vector3) -> void:
@@ -1318,7 +1332,7 @@ func _update_brush_chase() -> void:
 	direction = direction.normalized()
 	velocity = direction * preview_short_chase_speed
 	move_and_slide()
-	look_at(global_position + direction, Vector3.UP)
+	rotation = Vector3(PI, atan2(direction.x, direction.z), 0.0)
 
 func _can_sense_regular_player() -> bool:
 	if _preview_player_hidden or not is_instance_valid(_player_target):
