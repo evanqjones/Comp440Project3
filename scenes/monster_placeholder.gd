@@ -1855,6 +1855,11 @@ func _update_animated_visual() -> void:
 			clip = &"chase3"
 		elif clip == "search3":
 			clip = &"idle3"
+	# The Artroom chase has its own scripted movement path, so lock it to the
+	# requested phase-2 chase clip regardless of teleport or generic state timers.
+	if _preview_brush_chase_active:
+		phase = 2
+		clip = &"chase2"
 	if _animated_phase != phase or _animated_clip != StringName(clip):
 		_animated_phase = phase
 		_animated_clip = StringName(clip)
