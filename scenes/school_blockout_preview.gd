@@ -1996,7 +1996,9 @@ func _build_school_navigation() -> void:
 	nav_mesh.geometry_source_geometry_mode = NavigationMesh.SOURCE_GEOMETRY_ROOT_NODE_CHILDREN
 	nav_mesh.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav_mesh.geometry_collision_mask = 1
-	nav_mesh.agent_radius = 0.1
+	# Match the navmesh clearance to the monster capsule. The previous 0.1 m
+	# radius let library paths skim shelf corners that the 0.42 m body cannot fit.
+	nav_mesh.agent_radius = 0.42
 	nav_mesh.agent_height = 1.8
 	nav_mesh.agent_max_climb = 0.2
 	nav_mesh.cell_size = 0.1
