@@ -728,9 +728,15 @@ func _update_preview_item_encounter(delta: float) -> void:
 			if not is_instance_valid(_player_target):
 				return
 			var chase_target := _preview_clamp_to_encounter_room(_player_target.global_position)
-			var distance_to_player := global_position.distance_to(chase_target)
+			var direction_to_player := chase_target - global_position
+			direction_to_player.y = 0.0
+			var distance_to_player := direction_to_player.length()
 			if distance_to_player > 1.1:
-				_move_preview_item_toward(chase_target, preview_book_follow_speed, delta)
+				# The Book encounter ignores the library maze geometry by design.
+				var step := minf(preview_book_follow_speed * delta, distance_to_player - 1.1)
+				direction_to_player = direction_to_player.normalized()
+				global_position += direction_to_player * step
+				look_at(global_position + direction_to_player, Vector3.UP)
 			else:
 				velocity = Vector3.ZERO
 				move_and_slide()
