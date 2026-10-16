@@ -651,6 +651,20 @@ func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> v
 		_navigation_agent.target_position = target
 		_preview_item_last_navigation_target = target
 		_preview_item_refresh = 0.25
+	# Reaching a transient "navigation finished" state just after changing the
+	# target can leave the Library monster frozen at its initial maze position.
+	# Keep pursuing through the baked maze navmesh and use local obstacle steering
+	# if the agent reports no path for a frame.
+	if _preview_item_encounter == &"book" and _navigation_agent.is_navigation_finished():
+		var direct_direction := target - global_position
+		direct_direction.y = 0.0
+		if direct_direction.length() > _navigation_agent.target_desired_distance + 0.75:
+			direct_direction = _avoid_dynamic_obstacle(direct_direction.normalized())
+			velocity = direct_direction * speed
+			move_and_slide()
+			if direct_direction.length_squared() > 0.001:
+				look_at(global_position + direct_direction, Vector3.UP)
+			return
 	var direction := _navigation_agent.get_next_path_position() - global_position
 	direction.y = 0.0
 	if _navigation_agent.is_navigation_finished() or direction.length() <= _navigation_agent.target_desired_distance or direction.length_squared() < 0.01:

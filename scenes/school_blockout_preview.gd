@@ -1913,7 +1913,10 @@ func _try_science_window_stalk_spawn() -> void:
 			return
 	if destination == Vector3.ZERO:
 		return
-	if monster.try_preview_offscreen_teleport(destination, player.player_camera, false, 0.5):
+	# This is an authored window reveal. Generic teleports reject paths crossing
+	# window glass, which can also reject this deliberate spawn at the window.
+	# Place the monster at the outside lurk marker directly, then keep it still.
+	if monster.force_preview_interaction_spawn(destination):
 		var lab_floor: MeshInstance3D = _find_room_floor(school, "lab room floor")
 		if lab_floor != null and lab_floor.mesh != null:
 			var lab_bounds: AABB = lab_floor.global_transform * lab_floor.mesh.get_aabb()
