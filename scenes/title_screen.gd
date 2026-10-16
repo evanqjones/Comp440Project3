@@ -1,6 +1,6 @@
 extends Node3D
 
-const SCHOOL_MODEL: PackedScene = preload("res://assets.blend")
+const WEB_SCHOOL_MODEL: PackedScene = preload("res://assets/school_web.glb")
 const MONSTER_SCENE: PackedScene = preload("res://scenes/monster_placeholder.tscn")
 const TITLE_AMBIENCE: AudioStream = preload("res://sound/after_school_title_ambience.wav")
 const GAME_SCENE := "res://scenes/demo_scene.tscn"
@@ -37,7 +37,7 @@ func _process(delta: float) -> void:
 		_camera.look_at(_orbit_center + Vector3.UP * 1.35, Vector3.UP)
 
 func _build_lobby() -> void:
-	var school := SCHOOL_MODEL.instantiate()
+	var school := WEB_SCHOOL_MODEL.instantiate()
 	school.name = "SchoolLobby"
 	add_child(school)
 	var lobby_floor := _find_node_named(school, "Lobby Floor") as MeshInstance3D
