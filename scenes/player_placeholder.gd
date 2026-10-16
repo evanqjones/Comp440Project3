@@ -1,5 +1,8 @@
 extends "res://scripts/player_system.gd"
 
+const CAPTURE_MONSTER_SCENE := preload("res://monster/monster.tscn")
+const MONSTER_JUMPSCARE_STING := preload("res://sound/monster_croaks/06_jumpscare_sting.wav")
+
 @export_range(1.0, 8.0, 0.1) var move_speed: float = 3.5
 @export_range(1.0, 16.0, 0.1) var run_speed: float = 5.5
 @export_range(0.5, 4.0, 0.1) var crouch_speed: float = 2.0
@@ -34,7 +37,13 @@ var _standing_visual_height := 1.65
 var _interaction_target_id: StringName = &""
 var _pending_interaction_target_id: StringName = &""
 var _locker_camera_active := false
+var _locker_saved_pivot_position := Vector3.ZERO
+var _locker_saved_pivot_rotation := Vector3.ZERO
 var _ceiling_glance_tween: Tween
+var _capture_jumpscare: Node3D
+var _capture_jumpscare_viewport: SubViewport
+var _capture_jumpscare_overlay: CanvasLayer
+var _capture_sting: AudioStreamPlayer
 
 func _ready() -> void:
     super._ready()
@@ -73,7 +82,7 @@ func _unhandled_input(event: InputEvent) -> void:
         Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
         return
 
-    if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+    if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _locker_camera_active:
         camera_pivot.rotation.y -= event.relative.x * mouse_sensitivity
         camera_pivot.rotation.x = clampf(
             camera_pivot.rotation.x - event.relative.y * mouse_sensitivity,
@@ -140,17 +149,29 @@ func set_input_enabled(enabled: bool) -> void:
         if is_instance_valid(interaction_prompt):
             interaction_prompt.hide()
 
-func set_locker_camera_mode(enabled: bool) -> void:
+func set_locker_camera_mode(enabled: bool, locker_position: Vector3 = Vector3.ZERO, locker_normal: Vector3 = Vector3.FORWARD) -> void:
     if _locker_camera_active == enabled:
         return
     _locker_camera_active = enabled
     var visual := $CapsuleVisual as MeshInstance3D
     visual.visible = enabled
     if enabled:
-        # Pull the view just behind the player and aim it back toward the body.
-        player_camera.position = Vector3(0.0, 0.08, 1.15)
-        player_camera.rotation = Vector3(-0.48, 0.0, 0.0)
+        _locker_saved_pivot_position = camera_pivot.position
+        _locker_saved_pivot_rotation = camera_pivot.rotation
+        var outward := Vector3(locker_normal.x, 0.0, locker_normal.z).normalized()
+        if outward.length_squared() < 0.5:
+            outward = Vector3.FORWARD
+        camera_pivot.top_level = true
+        # Stay just above the locker top and close to its open side, below the
+        # school ceiling and inside the room's wall line.
+        camera_pivot.global_position = locker_position + Vector3.UP * 2.55 + outward * 0.45
+        camera_pivot.look_at(locker_position + Vector3.UP * 1.15 + outward * 2.4, Vector3.UP)
+        player_camera.position = Vector3.ZERO
+        player_camera.rotation = Vector3.ZERO
     else:
+        camera_pivot.top_level = false
+        camera_pivot.position = _locker_saved_pivot_position
+        camera_pivot.rotation = _locker_saved_pivot_rotation
         player_camera.position = Vector3.ZERO
         player_camera.rotation = Vector3.ZERO
 
@@ -188,16 +209,90 @@ func play_capture_and_respawn(checkpoint_id: StringName) -> void:
         return
     super.play_capture_and_respawn(checkpoint_id)
     if is_instance_valid(capture_status):
-        capture_status.visible = bool(get("capture_presentation_active"))
+        capture_status.hide()
+    _play_capture_jumpscare()
 
 func restore_after_capture(world_position: Vector3, checkpoint_id: StringName) -> void:
     super.restore_after_capture(world_position, checkpoint_id)
+    _clear_capture_jumpscare()
     _pending_interaction_target_id = &""
     _interaction_target_id = &""
     if is_instance_valid(capture_status):
         capture_status.hide()
     if is_instance_valid(interaction_prompt):
         interaction_prompt.hide()
+
+func _play_capture_jumpscare() -> void:
+    if not is_instance_valid(player_camera):
+        return
+    _clear_capture_jumpscare()
+
+    if not is_instance_valid(_capture_sting):
+        _capture_sting = AudioStreamPlayer.new()
+        _capture_sting.name = "MonsterJumpscareSting"
+        _capture_sting.stream = MONSTER_JUMPSCARE_STING
+        _capture_sting.volume_db = -2.0
+        _capture_sting.finished.connect(_capture_sting.stop)
+        add_child(_capture_sting)
+    _capture_sting.play()
+
+    _capture_jumpscare_viewport = SubViewport.new()
+    _capture_jumpscare_viewport.name = "CaptureJumpscareViewport"
+    _capture_jumpscare_viewport.size = get_viewport().size
+    _capture_jumpscare_viewport.transparent_bg = true
+    _capture_jumpscare_viewport.own_world_3d = true
+    _capture_jumpscare_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+    add_child(_capture_jumpscare_viewport)
+
+    var overlay_camera := Camera3D.new()
+    overlay_camera.name = "CaptureJumpscareCamera"
+    overlay_camera.current = true
+    overlay_camera.fov = player_camera.fov
+    _capture_jumpscare_viewport.add_child(overlay_camera)
+
+    var overlay_environment := WorldEnvironment.new()
+    var environment := Environment.new()
+    environment.background_mode = Environment.BG_CLEAR_COLOR
+    environment.background_color = Color(0.0, 0.0, 0.0, 0.0)
+    environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+    environment.ambient_light_color = Color(0.65, 0.65, 0.65)
+    environment.ambient_light_energy = 0.8
+    overlay_environment.environment = environment
+    _capture_jumpscare_viewport.add_child(overlay_environment)
+
+    var overlay_light := DirectionalLight3D.new()
+    overlay_light.name = "CaptureJumpscareLight"
+    overlay_light.rotation_degrees = Vector3(-35.0, -25.0, 0.0)
+    overlay_light.light_energy = 1.2
+    _capture_jumpscare_viewport.add_child(overlay_light)
+
+    _capture_jumpscare = CAPTURE_MONSTER_SCENE.instantiate() as Node3D
+    _capture_jumpscare.name = "CaptureJumpscare"
+    _capture_jumpscare.position = Vector3(-0.5, -2.5, -6.5)
+    _capture_jumpscare_viewport.add_child(_capture_jumpscare)
+    _capture_jumpscare.call("play_animation", &"jumpscare3", 0.0)
+
+    _capture_jumpscare_overlay = CanvasLayer.new()
+    _capture_jumpscare_overlay.name = "CaptureJumpscareOverlay"
+    _capture_jumpscare_overlay.layer = 100
+    add_child(_capture_jumpscare_overlay)
+    var texture_rect := TextureRect.new()
+    texture_rect.name = "CaptureJumpscareImage"
+    texture_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    texture_rect.texture = _capture_jumpscare_viewport.get_texture()
+    texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    texture_rect.stretch_mode = TextureRect.STRETCH_SCALE
+    texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _capture_jumpscare_overlay.add_child(texture_rect)
+
+func _clear_capture_jumpscare() -> void:
+    if is_instance_valid(_capture_jumpscare_overlay):
+        _capture_jumpscare_overlay.queue_free()
+    if is_instance_valid(_capture_jumpscare_viewport):
+        _capture_jumpscare_viewport.queue_free()
+    _capture_jumpscare_overlay = null
+    _capture_jumpscare_viewport = null
+    _capture_jumpscare = null
 
 func _update_interaction_target() -> void:
     _interaction_target_id = &""

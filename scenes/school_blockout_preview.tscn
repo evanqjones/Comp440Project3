@@ -9,7 +9,7 @@ background_mode = 1
 background_color = Color(0.012, 0.022, 0.065, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.13, 0.17, 0.29, 1)
-ambient_light_energy = 0.42
+ambient_light_energy = 0.28
 
 [sub_resource type="StyleBoxFlat" id="ObjectiveNote_style"]
 bg_color = Color(0.96, 0.87, 0.58, 0.96)
@@ -46,7 +46,7 @@ environment = SubResource("Environment_preview")
 [node name="PreviewLight" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-48, -25, 0)
 light_color = Color(0.23, 0.34, 0.68, 1)
-light_energy = 0.32
+light_energy = 0.17
 shadow_enabled = true
 
 [node name="DebugOverlay" type="CanvasLayer" parent="."]
