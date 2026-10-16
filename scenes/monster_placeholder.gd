@@ -1924,8 +1924,10 @@ func _phase_for_encounter() -> int:
 	match _preview_item_encounter:
 		&"lab_coat", &"science_classroom", &"book", &"ruler", &"ruler_hall", &"snack":
 			return 1
-		&"weight", &"microphone", &"microphone_escape", &"brush", &"brush_escape":
+		&"weight", &"microphone", &"microphone_escape":
 			return 2
+		&"brush", &"brush_escape":
+			return 3
 		_:
 			return 0
 
