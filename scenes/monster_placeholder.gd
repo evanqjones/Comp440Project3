@@ -5,6 +5,9 @@ extends CharacterBody3D
 @export_range(0.1, 3.0, 0.1) var preview_patrol_speed: float = 0.5
 @export_range(0.25, 5.0, 0.25) var preview_patrol_half_length: float = 1.75
 @export_range(0.1, 10.0, 0.1) var preview_short_chase_speed: float = 4.5
+@export_range(0.1, 2.0, 0.05) var preview_regular_follow_speed: float = 0.7
+@export_range(2.0, 12.0, 0.25) var preview_regular_follow_distance: float = 7.0
+@export_range(0.5, 3.0, 0.1) var preview_regular_follow_stop_distance: float = 1.6
 @export_range(0.1, 15.0, 0.1) var preview_bell_chase_speed: float = 6.5
 @export_range(0.1, 5.0, 0.1) var preview_lose_sight_grace: float = 1.0
 @export_range(0.5, 1.6, 0.05) var preview_squeeze_clearance: float = 1.1
@@ -35,12 +38,21 @@ extends CharacterBody3D
 @export_range(0.5, 5.0, 0.1) var preview_quiet_noise_turn_seconds: float = 1.0
 @export_range(5.0, 90.0, 1.0) var preview_science_turn_speed_degrees: float = 18.0
 
-const PREVIEW_STUCK_INVESTIGATION_SECONDS := 15.0
+const PREVIEW_STUCK_INVESTIGATION_SECONDS := 4.0
 const PREVIEW_STUCK_RELOCATION_RETRY_SECONDS := 1.0
 const PREVIEW_INVESTIGATION_PROGRESS_EPSILON := 0.002
+const PREVIEW_POST_TELEPORT_CAPTURE_DELAY := 3.0
+const MONSTER_IDLE_CROAK := preload("res://sound/monster_croaks/01_idle_low_croak.wav")
+const MONSTER_INVESTIGATING_RASP := preload("res://sound/monster_croaks/02_investigating_rasp.wav")
+const MONSTER_AGGRESSIVE_BARK := preload("res://sound/monster_croaks/03_aggressive_bark.wav")
+const MONSTER_UNSETTLING_GROWL := preload("res://sound/monster_croaks/04_unsettling_growl.wav")
+const MONSTER_CHASE_SCREAM := preload("res://sound/monster_croaks/05_chase_scream.wav")
+const ANIMATED_MONSTER_SCENE := preload("res://monster/monster.tscn")
+const MONSTER_VISUAL_FLOOR_OFFSET := -0.5
 
 signal monster_state_changed(state_id: StringName)
 signal noise_relocation_requested(source_position: Vector3)
+signal lost_track_relocation_requested(source_position: Vector3)
 signal preview_final_bell_chase_started
 
 var current_state: StringName = &"PATROL"
@@ -51,6 +63,9 @@ var _patrol_sign := 1.0
 var _patrol_active := false
 var _player_target: Node3D
 var _lost_sight_time := 0.0
+var _regular_follow_path_refresh := 0.0
+var _regular_follow_active := false
+var _regular_follow_lost_time := 0.0
 var _preview_bell_active := false
 var _preview_final_bell_tail_chase := false
 var _preview_final_bell_delay_remaining := 0.0
@@ -62,6 +77,18 @@ var _squeeze_amount := 0.0
 var _collision_shape: CollisionShape3D
 var _capsule_shape: CapsuleShape3D
 var _visual_capsule: MeshInstance3D
+var _animated_visual: Node3D
+var _proximity_croak: AudioStreamPlayer3D
+var _growl_cooldown := 10.0
+var _short_chase_scream_delay := -1.0
+var _obstacle_avoidance_direction := Vector3.ZERO
+var _animated_clearance_shape: CollisionShape3D
+var _animated_clearance_bounds := AABB()
+var _has_animated_clearance_bounds := false
+var _animated_phase := -1
+var _animated_clip: StringName = &""
+var _teleport_animation_time := 0.0
+var _post_teleport_capture_delay := 0.0
 var _base_capsule_height := 3.0
 var _base_capsule_radius := 0.42
 var _investigation_time := 0.0
@@ -128,7 +155,10 @@ var _weight_investigation_active := false
 var _weight_investigation_target := Vector3.ZERO
 var _weight_look_time := 0.0
 var _preview_weight_escape_active := false
+var _weight_escape_completed := false
 var _preview_weight_escape_target := Vector3.ZERO
+var _preview_dormant := false
+var _preview_intro_idle := false
 @onready var _navigation_agent: NavigationAgent3D = $NavigationAgent3D
 
 func _ready() -> void:
@@ -137,12 +167,136 @@ func _ready() -> void:
 	_collision_shape.shape = _capsule_shape
 	_visual_capsule = $TallCapsule
 	_capsule_was_visible = _visual_capsule.visible
+	_animated_visual = ANIMATED_MONSTER_SCENE.instantiate()
+	_animated_visual.name = "AnimatedMonsterVisual"
+	_animated_visual.position.y = MONSTER_VISUAL_FLOOR_OFFSET
+	_animated_visual.scale = Vector3.ONE * 0.9
+	_animated_visual.rotation.y = PI
+	add_child(_animated_visual)
+	_animated_clearance_shape = CollisionShape3D.new()
+	_animated_clearance_shape.name = "AnimatedModelClearance"
+	var clearance_cylinder := CylinderShape3D.new()
+	_animated_clearance_shape.shape = clearance_cylinder
+	add_child(_animated_clearance_shape)
+	_refresh_animated_clearance_shape()
+	_capsule_was_visible = false
+	_visual_capsule.visible = _capsule_was_visible
 	_base_sight_distance = sight_distance
 	_base_sight_half_width = sight_half_width
 	_search_cone = get_node_or_null("OpaqueSearchCone") as MeshInstance3D
 	_create_opaque_search_cone()
 	_search_cone = get_node("OpaqueSearchCone") as MeshInstance3D
 	_create_preview_glowing_face()
+	_create_proximity_croak()
+	_update_animated_visual()
+
+func _process(delta: float) -> void:
+	if _preview_dormant:
+		visible = false
+		velocity = Vector3.ZERO
+		if is_instance_valid(_proximity_croak) and _proximity_croak.playing:
+			_proximity_croak.stop()
+		return
+	if _teleport_animation_time > 0.0:
+		_teleport_animation_time = maxf(0.0, _teleport_animation_time - delta)
+	if _post_teleport_capture_delay > 0.0:
+		_post_teleport_capture_delay = maxf(0.0, _post_teleport_capture_delay - delta)
+	if is_instance_valid(_proximity_croak):
+		if visible and not _proximity_croak.playing:
+			_proximity_croak.play()
+		elif not visible and _proximity_croak.playing:
+			_proximity_croak.stop()
+	if visible and current_state == &"PATROL" and is_instance_valid(_player_target):
+		_growl_cooldown -= delta
+		if _growl_cooldown <= 0.0 and global_position.distance_to(_player_target.global_position) <= 10.0:
+			_play_monster_cue(MONSTER_UNSETTLING_GROWL, "MonsterGrowl", -4.0)
+			_growl_cooldown = randf_range(12.0, 20.0)
+	if visible and current_state == &"SHORT_CHASE" and _short_chase_scream_delay >= 0.0:
+		_short_chase_scream_delay -= delta
+		if _short_chase_scream_delay < 0.0:
+			_play_monster_cue(MONSTER_CHASE_SCREAM, "MonsterChaseScream", 0.0)
+			_short_chase_scream_delay = -1.0
+	_update_animated_visual()
+	if _is_chasing_player() and not _preview_player_hidden:
+		_face_model_toward_player()
+
+func set_preview_dormant(dormant: bool) -> void:
+	_preview_dormant = dormant
+	if dormant:
+		visible = false
+		velocity = Vector3.ZERO
+		_collision_shape.set_deferred("disabled", true)
+		set_physics_process(false)
+		if is_instance_valid(_proximity_croak):
+			_proximity_croak.stop()
+	else:
+		visible = true
+		_collision_shape.set_deferred("disabled", false)
+		set_physics_process(true)
+
+func begin_preview_intro_idle() -> void:
+	_preview_dormant = false
+	_preview_intro_idle = true
+	visible = true
+	velocity = Vector3.ZERO
+	_patrol_active = false
+	_regular_follow_active = false
+	_weight_investigation_active = false
+	_collision_shape.set_deferred("disabled", true)
+	set_physics_process(true)
+	_set_state(&"PATROL")
+
+func end_preview_intro_idle() -> void:
+	_preview_intro_idle = false
+	set_preview_dormant(true)
+
+func _is_chasing_player() -> bool:
+	return (
+		current_state in [&"SHORT_CHASE", &"BELL_CHASE"]
+		or _preview_brush_chase_active
+		or _preview_weight_escape_active
+		or _preview_final_bell_tail_chase
+	)
+
+func _face_model_toward_player() -> void:
+	if not is_instance_valid(_player_target) or not is_instance_valid(_animated_visual):
+		return
+	var to_player := _player_target.global_position - global_position
+	to_player.y = 0.0
+	if to_player.length_squared() < 0.001:
+		return
+	look_at(global_position + to_player, Vector3.UP)
+	# The imported model faces +Z; keep its authored half-turn while the body
+	# continuously tracks the player's actual position during chase animations.
+	_animated_visual.rotation.y = PI
+
+func _play_monster_cue(stream: AudioStream, cue_name: String, volume_db: float = -2.0) -> void:
+	var cue := AudioStreamPlayer3D.new()
+	cue.name = cue_name
+	cue.stream = stream
+	cue.volume_db = volume_db - 6.0
+	cue.unit_size = 3.0
+	cue.max_distance = 24.0
+	cue.finished.connect(cue.queue_free)
+	add_child(cue)
+	cue.play()
+
+func _create_proximity_croak() -> void:
+	var looped_croak := MONSTER_IDLE_CROAK.duplicate() as AudioStreamWAV
+	looped_croak.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	looped_croak.loop_begin = 0
+	looped_croak.loop_end = int(round(looped_croak.get_length() * looped_croak.mix_rate))
+	_proximity_croak = AudioStreamPlayer3D.new()
+	_proximity_croak.name = "MonsterProximityCroak"
+	_proximity_croak.stream = looped_croak
+	_proximity_croak.position = Vector3(0.0, 1.2, 0.0)
+	_proximity_croak.volume_db = -12.0
+	_proximity_croak.unit_size = 3.0
+	_proximity_croak.max_distance = 20.0
+	add_child(_proximity_croak)
+
+func can_capture_player() -> bool:
+	return _post_teleport_capture_delay <= 0.0
 
 func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item_position: Vector3, points: Array[Vector3]) -> void:
 	if _preview_book_sink_active:
@@ -153,6 +307,8 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
 	_preview_window_stalk_active = false
 	_preview_window_slide_active = false
 	_preview_item_encounter = encounter
+	_regular_follow_active = false
+	_regular_follow_lost_time = 0.0
 	_preview_item_room_bounds = room_bounds
 	_preview_item_position = item_position
 	_preview_item_points = points.duplicate()
@@ -337,6 +493,9 @@ func start_preview_window_stalk(facing_direction: Vector3, look_target: Vector3 
 	_preview_window_stalk_active = true
 	_preview_window_slide_active = false
 	_patrol_active = false
+	_quiet_noise_look_time = 0.0
+	_preview_lab_attention_time = 0.0
+	_science_has_turn_target = false
 	velocity = Vector3.ZERO
 	if look_target != Vector3.ZERO:
 		var direction := look_target - global_position
@@ -368,7 +527,7 @@ func on_preview_item_collected(item_id: StringName) -> void:
 	if item_id == &"book":
 		_start_preview_book_sink()
 	elif item_id == &"brush":
-		_visual_capsule.visible = true
+		_visual_capsule.visible = _capsule_was_visible
 		_set_search_cone_visible(true)
 		_glowing_face.visible = false
 	elif item_id == &"front_door_key":
@@ -377,12 +536,21 @@ func on_preview_item_collected(item_id: StringName) -> void:
 func begin_preview_weight_escape(destination: Vector3) -> void:
 	_preview_item_encounter = &""
 	_weight_investigation_active = false
+	# The weight encounter has an exit beat: its noise must not pull the monster
+	# back into a player chase while it is trying to leave the gym.
+	_preview_bell_active = false
+	_regular_follow_active = false
+	_regular_follow_lost_time = 0.0
+	_lost_sight_time = 0.0
+	_post_teleport_capture_delay = 0.0
 	_preview_weight_escape_target = destination
 	_preview_weight_escape_active = true
+	_weight_escape_completed = false
 	_patrol_active = false
 	_navigation_agent.target_desired_distance = 0.75
 	_navigation_agent.target_position = destination
 	velocity = Vector3.ZERO
+	_set_state(&"PATROL")
 
 func is_preview_weight_escape_active() -> bool:
 	return _preview_weight_escape_active
@@ -490,6 +658,7 @@ func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> v
 		move_and_slide()
 		return
 	direction = direction.normalized()
+	direction = _avoid_dynamic_obstacle(direction)
 	velocity = direction * speed
 	move_and_slide()
 	look_at(global_position + direction, Vector3.UP)
@@ -539,7 +708,7 @@ func _update_preview_item_encounter(delta: float) -> void:
 				move_and_slide()
 				_face_preview_direction(_player_target.global_position - global_position, delta)
 		&"brush":
-			_visual_capsule.visible = true
+			_visual_capsule.visible = _capsule_was_visible
 			if not _preview_item_points.is_empty() and global_position.distance_to(_preview_item_points[0]) > 0.8:
 				_move_preview_item_toward(_preview_item_points[0], 0.25, delta)
 				return
@@ -736,6 +905,7 @@ func _update_weight_escape(delta: float) -> void:
 	to_destination.y = 0.0
 	if to_destination.length() <= 1.0:
 		_preview_weight_escape_active = false
+		_weight_escape_completed = true
 		_patrol_active = false
 		velocity = Vector3.ZERO
 		move_and_slide()
@@ -743,10 +913,10 @@ func _update_weight_escape(delta: float) -> void:
 		return
 	var direction := _navigation_agent.get_next_path_position() - global_position
 	direction.y = 0.0
+	# If the nav map cannot produce the final segment into the destination, keep
+	# walking toward the gym exit instead of freezing and falling back to chase.
 	if _navigation_agent.is_navigation_finished() or direction.length_squared() < 0.01:
-		velocity = Vector3.ZERO
-		move_and_slide()
-		return
+		direction = to_destination
 	direction = direction.normalized()
 	var delta_time := maxf(delta, 0.001)
 	var low_header_ahead := _has_low_overhead_clearance(direction)
@@ -784,6 +954,12 @@ func set_preview_spawn_behavior(in_hallway: bool, axis: Vector3 = Vector3.RIGHT)
 
 func set_player_target(player: Node3D) -> void:
 	_player_target = player
+	var player_body := player as PhysicsBody3D
+	if is_instance_valid(player_body):
+		# The player still triggers capture by proximity, but cannot physically
+		# shove the CharacterBody while walking into the monster.
+		add_collision_exception_with(player_body)
+		player_body.add_collision_exception_with(self)
 
 func set_preview_player_hidden(hidden: bool, in_hallway_locker: bool = false) -> void:
 	_preview_player_hidden = hidden
@@ -802,16 +978,33 @@ func set_safe_rooms(room_ids: Array[StringName]) -> void:
 		_bell_path_refresh = 0.0
 
 func refresh_preview_navigation() -> void:
-	if current_state == &"INVESTIGATE":
+	if _preview_weight_escape_active:
+		_navigation_agent.target_position = _preview_weight_escape_target
+	elif current_state == &"INVESTIGATE":
 		_navigation_agent.target_position = _investigation_target
 	elif current_state == &"BELL_CHASE":
 		_has_bell_target = false
 		_bell_path_refresh = 0.0
 
-func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool, minimum_distance: float = 2.0, patrol_axis: Vector3 = Vector3.RIGHT) -> bool:
+func force_preview_interaction_spawn(destination: Vector3) -> bool:
+	if _preview_bell_active or _preview_item_encounter != &"" or not is_instance_valid(_player_target):
+		return false
+	global_position = destination
+	velocity = Vector3.ZERO
+	_patrol_active = false
+	_regular_follow_active = false
+	_regular_follow_lost_time = 0.0
+	_lost_sight_time = 0.0
+	_post_teleport_capture_delay = 0.0
+	_teleport_animation_time = 0.9
+	_set_state(&"PATROL")
+	return true
+
+func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3D, in_hallway: bool, minimum_distance: float = 2.0, patrol_axis: Vector3 = Vector3.RIGHT, allow_chase_for_interaction: bool = false) -> bool:
 	# This is a manual preview hook. Production relocation timing/candidate choice
 	# remains a stalking-system decision; Bell chase categorically rejects it.
-	if _preview_bell_active or current_state not in [&"PATROL", &"INVESTIGATE"] or not is_instance_valid(player_camera):
+	var scripted_encounter_override := allow_chase_for_interaction and current_state == &"SHORT_CHASE" and _preview_item_encounter == &""
+	if _preview_bell_active or (current_state not in [&"PATROL", &"INVESTIGATE"] and not scripted_encounter_override) or not is_instance_valid(player_camera):
 		return false
 	var hidden_after_book := _preview_item_removed and not visible
 	if not hidden_after_book and _monster_body_visible_from_camera(global_position, player_camera):
@@ -820,11 +1013,16 @@ func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3
 		return false
 	if destination.distance_to(global_position) < minimum_distance:
 		return false
+	if _teleport_path_crosses_window(global_position, destination):
+		return false
 	var nav_map: RID = _navigation_agent.get_navigation_map()
 	if NavigationServer3D.map_get_closest_point(nav_map, destination).distance_to(destination) > 1.35:
 		return false
 	global_position = destination
 	velocity = Vector3.ZERO
+	_teleport_animation_time = 0.9
+	if _preview_item_encounter == &"" and not _preview_bell_active and not scripted_encounter_override:
+		_post_teleport_capture_delay = PREVIEW_POST_TELEPORT_CAPTURE_DELAY
 	if hidden_after_book:
 		visible = true
 		collision_layer = 2
@@ -833,7 +1031,26 @@ func try_preview_offscreen_teleport(destination: Vector3, player_camera: Camera3
 	set_preview_spawn_behavior(in_hallway, patrol_axis)
 	return true
 
+func _teleport_path_crosses_window(from_position: Vector3, to_position: Vector3) -> bool:
+	var scene_root := get_tree().current_scene
+	if not is_instance_valid(scene_root):
+		return false
+	for candidate in scene_root.find_children("*", "MeshInstance3D", true, false):
+		var window_mesh := candidate as MeshInstance3D
+		if not String(window_mesh.name).to_lower().contains("window glass") or window_mesh.mesh == null:
+			continue
+		var window_bounds: AABB = window_mesh.global_transform * window_mesh.mesh.get_aabb()
+		window_bounds = window_bounds.grow(0.2)
+		for height in [0.5, 1.5, 2.5]:
+			var ray_offset := Vector3.UP * float(height)
+			if window_bounds.intersects_segment(from_position + ray_offset, to_position + ray_offset):
+				return true
+	return false
+
 func receive_preview_door_noise(source_position: Vector3, loudness: float = 0.7) -> void:
+	if _preview_item_encounter == &"" and not _preview_bell_active:
+		_handle_regular_monster_noise(source_position)
+		return
 	if _preview_item_encounter == &"weight" and not _preview_bell_active:
 		_start_weight_investigation(source_position)
 		return
@@ -865,6 +1082,9 @@ func receive_noise(event: NoiseEvent) -> void:
 		_preview_lab_attention_target = event.source_position
 		_preview_lab_attention_time = 5.0
 		return
+	if _preview_item_encounter == &"":
+		_handle_regular_monster_noise(event.source_position)
+		return
 	if current_state == &"INVESTIGATE":
 		if global_position.distance_to(event.source_position) <= preview_door_investigation_radius:
 			_quiet_noise_look_position = event.source_position
@@ -879,6 +1099,14 @@ func receive_noise(event: NoiseEvent) -> void:
 		return
 	_quiet_noise_look_position = event.source_position
 	_quiet_noise_look_time = preview_quiet_noise_turn_seconds
+
+func _handle_regular_monster_noise(source_position: Vector3) -> void:
+	if current_state in [&"SHORT_CHASE", &"BELL_CHASE"]:
+		return
+	if global_position.distance_to(source_position) <= preview_door_investigation_radius:
+		begin_preview_investigation(source_position)
+	else:
+		noise_relocation_requested.emit(source_position)
 
 func begin_preview_investigation(source_position: Vector3) -> void:
 	if _preview_bell_active or current_state in [&"SHORT_CHASE", &"BELL_CHASE"]:
@@ -949,16 +1177,28 @@ func begin_preview_final_bell_chase() -> void:
 	_set_state(&"BELL_CHASE")
 
 func _physics_process(delta: float) -> void:
+	if _preview_dormant:
+		return
+	if _preview_intro_idle:
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
+	# This scripted exit takes priority over every generic chase state. Keep this
+	# ahead of bell and sight checks so the monster can finish leaving the room.
+	if _preview_weight_escape_active:
+		_update_weight_escape(delta)
+		return
+	if _weight_escape_completed:
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
+
 	if _preview_bell_active:
 		_update_bell_chase()
 		return
 
 	if _preview_brush_chase_active:
 		_update_brush_chase()
-		return
-
-	if _preview_weight_escape_active:
-		_update_weight_escape(delta)
 		return
 
 	if _preview_window_stalk_active:
@@ -982,17 +1222,48 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 
+	var regular_teleport_chase_delayed := _preview_item_encounter == &"" and not _preview_bell_active and _post_teleport_capture_delay > 0.0
+
 	if _preview_ruler_hall_active:
 		_update_ruler_hall_spotlight()
 		if _can_see_from_ruler_spotlight():
 			_set_state(&"SHORT_CHASE")
 			_lost_sight_time = 0.0
 
+	# Keep the original fast chase inside the monster's normal sight cone. Outside
+	# that cone, it shadows a nearby visible player at a deliberate walking pace.
+	if _preview_item_encounter == &"" and not regular_teleport_chase_delayed and not _preview_ruler_hall_active and _can_see_player():
+		_regular_follow_active = false
+		_regular_follow_lost_time = 0.0
+		_set_state(&"SHORT_CHASE")
+		_lost_sight_time = 0.0
+		_update_short_chase(delta)
+		return
+	var can_follow_regular_player := _preview_item_encounter == &"" and not regular_teleport_chase_delayed and not _preview_ruler_hall_active and _can_sense_regular_player()
+	if can_follow_regular_player:
+		_regular_follow_active = true
+		_regular_follow_lost_time = 0.0
+		if current_state == &"SHORT_CHASE":
+			_set_state(&"PATROL")
+		_update_regular_follow(delta)
+		return
+	if _regular_follow_active and not _preview_player_hidden:
+		_regular_follow_lost_time += delta
+		if _regular_follow_lost_time >= 0.8:
+			_regular_follow_active = false
+			_regular_follow_lost_time = 0.0
+			velocity = Vector3.ZERO
+			_set_state(&"PATROL")
+			lost_track_relocation_requested.emit(_player_target.global_position)
+			return
+	if regular_teleport_chase_delayed and current_state == &"SHORT_CHASE":
+		_set_state(&"PATROL")
+
 	if current_state == &"SHORT_CHASE":
 		_update_short_chase(delta)
 		return
 
-	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"]:
+	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"] and not (_preview_item_encounter == &"" and regular_teleport_chase_delayed):
 		var snack_is_peeking := _preview_item_encounter != &"snack" or _preview_snack_phase == &"peeking"
 		if snack_is_peeking and (_preview_item_encounter == &"snack" or (_preview_item_encounter == &"science_classroom" and _science_encounter_settled)):
 			if _preview_item_encounter == &"snack":
@@ -1006,7 +1277,7 @@ func _physics_process(delta: float) -> void:
 		_update_preview_item_encounter(delta)
 		return
 
-	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"]:
+	if _can_see_player() and _preview_item_encounter not in [&"weight", &"ruler_hall"] and not regular_teleport_chase_delayed:
 		_set_state(&"SHORT_CHASE")
 		_lost_sight_time = 0.0
 		_update_short_chase(delta)
@@ -1035,6 +1306,47 @@ func _update_brush_chase() -> void:
 	move_and_slide()
 	look_at(global_position + direction, Vector3.UP)
 
+func _can_sense_regular_player() -> bool:
+	if _preview_player_hidden or not is_instance_valid(_player_target):
+		return false
+	var to_player := _player_target.global_position - global_position
+	to_player.y = 0.0
+	if to_player.length() > preview_regular_follow_distance:
+		return false
+	var target_height := 0.42 if _player_target.get("movement_state") == &"crouching" else 0.75
+	var ray_start := global_position + Vector3.UP * 1.5
+	var ray_end := _player_target.global_position + Vector3.UP * target_height
+	var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end)
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty() and hit.get("collider") == _player_target
+
+func _update_regular_follow(delta: float) -> void:
+	var to_player := _player_target.global_position - global_position
+	to_player.y = 0.0
+	if to_player.length_squared() <= 0.001:
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
+	look_at(global_position + to_player.normalized(), Vector3.UP)
+	if to_player.length() <= preview_regular_follow_stop_distance:
+		velocity = Vector3.ZERO
+		move_and_slide()
+		return
+	_regular_follow_path_refresh -= delta
+	if _regular_follow_path_refresh <= 0.0 or _navigation_agent.target_position.distance_to(_player_target.global_position) > 0.6:
+		_navigation_agent.target_position = _player_target.global_position
+		_regular_follow_path_refresh = 0.2
+	var direction := _navigation_agent.get_next_path_position() - global_position
+	direction.y = 0.0
+	if _navigation_agent.is_navigation_finished() or direction.length_squared() <= 0.01:
+		velocity = Vector3.ZERO
+	else:
+		direction = _avoid_dynamic_obstacle(direction.normalized())
+		velocity = direction.normalized() * preview_regular_follow_speed
+	move_and_slide()
+
 func _update_quiet_noise_look(delta: float) -> void:
 	if _quiet_noise_look_time <= 0.0 or current_state not in [&"PATROL", &"INVESTIGATE"]:
 		return
@@ -1049,6 +1361,7 @@ func _update_investigation(delta: float) -> void:
 	direction.y = 0.0
 	if not _navigation_agent.is_navigation_finished() and direction.length() > _navigation_agent.target_desired_distance and direction.length_squared() > 0.01:
 		direction = direction.normalized()
+		direction = _avoid_dynamic_obstacle(direction)
 		var delta_time := maxf(delta, 0.001)
 		var low_header_ahead := _has_low_overhead_clearance(direction)
 		_update_squeeze(direction, delta_time, low_header_ahead)
@@ -1076,6 +1389,8 @@ func _update_investigation(delta: float) -> void:
 				start_preview_hallway_patrol(_patrol_axis)
 			else:
 				_set_state(&"PATROL")
+			if _preview_item_encounter == &"":
+				lost_track_relocation_requested.emit(_player_target.global_position if is_instance_valid(_player_target) else _investigation_target)
 			_squeeze_amount = 0.0
 			_apply_squeeze_shape()
 	_check_stuck_investigation(delta)
@@ -1092,7 +1407,7 @@ func _check_stuck_investigation(delta: float) -> void:
 	_investigation_relocation_retry_time = maxf(0.0, _investigation_relocation_retry_time - delta)
 	if _investigation_stall_time >= PREVIEW_STUCK_INVESTIGATION_SECONDS and _investigation_relocation_retry_time <= 0.0:
 		_investigation_relocation_retry_time = PREVIEW_STUCK_RELOCATION_RETRY_SECONDS
-		noise_relocation_requested.emit(_investigation_target)
+		lost_track_relocation_requested.emit(_player_target.global_position if is_instance_valid(_player_target) else _investigation_target)
 
 func _update_bell_chase() -> void:
 	if _preview_player_hidden:
@@ -1268,6 +1583,37 @@ func _is_centerline_clear(direction: Vector3) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(ray_start, ray_end, 1, [get_rid()])
 	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
+func _avoid_dynamic_obstacle(direction: Vector3) -> Vector3:
+	direction.y = 0.0
+	if direction.length_squared() < 0.001:
+		return direction
+	direction = direction.normalized()
+	var probe_origin := global_position + Vector3.UP * 0.42
+	var forward_query := PhysicsRayQueryParameters3D.create(
+		probe_origin,
+		probe_origin + direction * 0.8,
+		1,
+		[get_rid()]
+	)
+	var forward_hit := get_world_3d().direct_space_state.intersect_ray(forward_query)
+	if forward_hit.is_empty():
+		_obstacle_avoidance_direction = Vector3.ZERO
+		return direction
+	if _obstacle_avoidance_direction.length_squared() < 0.001:
+		var side := Vector3.UP.cross(direction).normalized()
+		var left_clearance := _side_clearance(probe_origin, side)
+		var right_clearance := _side_clearance(probe_origin, -side)
+		# An unobstructed probe returns -1, so treat it as more open than a
+		# measured hit distance. Prefer a stable side when both are clear.
+		var left_score := 100.0 if left_clearance < 0.0 else left_clearance
+		var right_score := 100.0 if right_clearance < 0.0 else right_clearance
+		if is_equal_approx(left_score, right_score):
+			_obstacle_avoidance_direction = side if int(absf(global_position.x * 10.0)) % 2 == 0 else -side
+		else:
+			_obstacle_avoidance_direction = side if left_score > right_score else -side
+	var steer := direction * 0.25 + _obstacle_avoidance_direction * 0.75
+	return steer.normalized()
+
 func _has_low_overhead_clearance(direction: Vector3) -> bool:
 	direction.y = 0.0
 	var probe_positions: Array[Vector3] = [global_position]
@@ -1337,6 +1683,8 @@ func _update_short_chase(delta: float) -> void:
 					_navigation_agent.target_position = _preview_item_points[0]
 					_preview_item_last_navigation_target = _preview_item_points[0]
 			_set_state(&"PATROL")
+			if _preview_item_encounter == &"" and not _preview_bell_active and not _preview_ruler_hall_active:
+				lost_track_relocation_requested.emit(_player_target.global_position)
 			return
 
 	var direction := _player_target.global_position - global_position
@@ -1427,10 +1775,131 @@ func _set_state(next_state: StringName) -> void:
 	if current_state == next_state:
 		return
 	current_state = next_state
+	if visible:
+		match next_state:
+			&"INVESTIGATE":
+				_play_monster_cue(MONSTER_INVESTIGATING_RASP, "MonsterInvestigatingRasp")
+			&"SHORT_CHASE":
+				_short_chase_scream_delay = 2.0
+				_play_monster_cue(MONSTER_AGGRESSIVE_BARK, "MonsterAggressiveBark")
+			&"BELL_CHASE":
+				_short_chase_scream_delay = -1.0
+				_play_monster_cue(MONSTER_CHASE_SCREAM, "MonsterChaseScream", 0.0)
 	if next_state == &"PATROL":
 		_squeeze_amount = 0.0
 		_apply_squeeze_shape()
 	monster_state_changed.emit(current_state)
+	_update_animated_visual()
+
+func _update_animated_visual() -> void:
+	if not is_instance_valid(_animated_visual):
+		return
+	var phase := _phase_for_encounter()
+	if _teleport_animation_time > 0.0:
+		phase = 0
+	var is_chasing := _is_chasing_player()
+	var actual_velocity := get_real_velocity()
+	actual_velocity.y = 0.0
+	var is_moving := actual_velocity.length_squared() > 0.01
+	var clip := "idle%d" % phase
+	if is_chasing:
+		clip = "chase%d" % phase
+	elif current_state == &"INVESTIGATE":
+		clip = "search%d" % phase
+	elif _preview_window_stalk_active:
+		clip = "idle%d" % phase
+	elif is_moving:
+		clip = "walk%d" % phase
+	elif _is_searching_noise_area():
+		clip = "search%d" % phase
+	if _teleport_animation_time > 0.0 and not is_chasing and not _preview_window_stalk_active:
+		phase = 0
+		if current_state == &"INVESTIGATE" or _is_searching_noise_area():
+			clip = "search0"
+		elif not is_moving:
+			clip = "idle0"
+		else:
+			clip = "walk0"
+	# The supplied spider phase has only idle3/chase3/jumpscare3. Use its
+	# available idle/chase clips for the states without dedicated animations.
+	if phase == 3:
+		if clip == "walk3":
+			clip = &"chase3"
+		elif clip == "search3":
+			clip = &"idle3"
+	if _animated_phase != phase or _animated_clip != StringName(clip):
+		_animated_phase = phase
+		_animated_clip = StringName(clip)
+		_animated_visual.call("play_animation", _animated_clip)
+		var animation_player := _animated_visual.call("get_animation_player") as AnimationPlayer
+		if is_instance_valid(animation_player):
+			animation_player.speed_scale = 0.9
+		_refresh_animated_clearance_shape()
+
+func _refresh_animated_clearance_shape() -> void:
+	if not is_instance_valid(_animated_visual) or not is_instance_valid(_animated_clearance_shape):
+		return
+	var clearance_is_for_teleport_phase := _preview_item_encounter == &"" and not _preview_bell_active and _phase_for_encounter() == 0
+	_animated_clearance_shape.set_deferred("disabled", not clearance_is_for_teleport_phase)
+	if not clearance_is_for_teleport_phase:
+		return
+	var visual_to_body := global_transform.affine_inverse()
+	for mesh_instance in _animated_visual.find_children("*", "MeshInstance3D", true, false):
+		var mesh := mesh_instance as MeshInstance3D
+		if mesh == null or mesh.mesh == null or not mesh.is_visible_in_tree():
+			continue
+		var mesh_to_body := visual_to_body * mesh.global_transform
+		var mesh_bounds := mesh.get_aabb()
+		for corner_index in 8:
+			var corner := mesh_bounds.position + Vector3(
+				mesh_bounds.size.x if corner_index & 1 else 0.0,
+				mesh_bounds.size.y if corner_index & 2 else 0.0,
+				mesh_bounds.size.z if corner_index & 4 else 0.0
+			)
+			var body_corner := mesh_to_body * corner
+			var point_bounds := AABB(body_corner, Vector3.ZERO)
+			if not _has_animated_clearance_bounds:
+				_animated_clearance_bounds = point_bounds
+				_has_animated_clearance_bounds = true
+			else:
+				_animated_clearance_bounds = _animated_clearance_bounds.expand(body_corner)
+	if not _has_animated_clearance_bounds:
+		return
+	var bounds := _animated_clearance_bounds
+	var radial_extent := 0.0
+	for corner_index in 8:
+		var corner := bounds.position + Vector3(
+			bounds.size.x if corner_index & 1 else 0.0,
+			bounds.size.y if corner_index & 2 else 0.0,
+			bounds.size.z if corner_index & 4 else 0.0
+		)
+		radial_extent = maxf(radial_extent, Vector2(corner.x, corner.z).length())
+	var cylinder := _animated_clearance_shape.shape as CylinderShape3D
+	# Limit side clearance so the visual proxy can still pass ordinary hallway
+	# props that the baked navigation path does not route around.
+	cylinder.radius = clampf(radial_extent * 1.12 + 0.08, 0.45, 0.62)
+	var vertical_margin := 0.1
+	cylinder.height = maxf(0.1, bounds.size.y + vertical_margin)
+	_animated_clearance_shape.position.y = bounds.position.y + bounds.size.y * 0.5 + vertical_margin * 0.5
+
+func _is_searching_noise_area() -> bool:
+	return (
+		_quiet_noise_look_time > 0.0
+		or _preview_lab_attention_time > 0.0
+		or (_weight_investigation_active and _weight_look_time > 0.0)
+		or _science_has_turn_target
+	)
+
+func _phase_for_encounter() -> int:
+	if _preview_bell_active or current_state == &"BELL_CHASE" or _preview_final_bell_tail_chase:
+		return 3
+	match _preview_item_encounter:
+		&"lab_coat", &"science_classroom", &"book", &"ruler", &"ruler_hall", &"snack":
+			return 1
+		&"weight", &"microphone", &"microphone_escape", &"brush", &"brush_escape":
+			return 2
+		_:
+			return 0
 
 func _create_opaque_search_cone() -> void:
 	var surface := SurfaceTool.new()
