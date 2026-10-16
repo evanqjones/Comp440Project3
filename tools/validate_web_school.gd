@@ -21,6 +21,18 @@ func _init() -> void:
 		push_error("The exported school is empty or missing required environment geometry.")
 		quit(1)
 		return
+	var title_scene := load("res://scenes/title_screen.tscn") as PackedScene
+	if title_scene == null:
+		push_error("The exported package is missing the title scene.")
+		quit(1)
+		return
+	var title := title_scene.instantiate()
+	if title.get_script() == null:
+		push_error("The exported title scene script did not load.")
+		title.free()
+		quit(1)
+		return
+	title.free()
 	quit(0)
 
 func _count_school(node: Node, counts: Dictionary) -> void:
