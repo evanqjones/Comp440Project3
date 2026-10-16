@@ -124,6 +124,9 @@ var _science_turn_target := Vector3.ZERO
 var _preview_window_stalk_active := false
 var _preview_window_slide_active := false
 var _preview_book_sink_active := false
+var _preview_book_collision_override_active := false
+var _preview_book_saved_collision_layer := 2
+var _preview_book_saved_collision_mask := 1
 var _preview_book_sink_start_y := 0.0
 var _preview_book_sink_tween: Tween
 var _preview_player_hidden := false
@@ -331,6 +334,12 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
 	visible = true
 	collision_layer = 2
 	collision_mask = 1
+	if encounter == &"book":
+		_preview_book_saved_collision_layer = collision_layer
+		_preview_book_saved_collision_mask = collision_mask
+		_preview_book_collision_override_active = true
+		collision_layer = 0
+		collision_mask = 0
 	_visual_capsule.visible = _capsule_was_visible
 	_set_search_cone_visible(true)
 	_glowing_face.visible = false
@@ -369,6 +378,10 @@ func begin_preview_item_encounter(encounter: StringName, room_bounds: AABB, item
 		_set_item_waypoint_target()
 
 func end_preview_item_encounter() -> void:
+	if _preview_book_collision_override_active:
+		collision_layer = _preview_book_saved_collision_layer
+		collision_mask = _preview_book_saved_collision_mask
+		_preview_book_collision_override_active = false
 	_preview_brush_chase_active = false
 	_science_encounter_settled = false
 	_science_has_turn_target = false
@@ -665,20 +678,6 @@ func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> v
 		_navigation_agent.target_position = target
 		_preview_item_last_navigation_target = target
 		_preview_item_refresh = 0.25
-	# Reaching a transient "navigation finished" state just after changing the
-	# target can leave the Library monster frozen at its initial maze position.
-	# Keep pursuing through the baked maze navmesh and use local obstacle steering
-	# if the agent reports no path for a frame.
-	if _preview_item_encounter == &"book" and _navigation_agent.is_navigation_finished():
-		var direct_direction := target - global_position
-		direct_direction.y = 0.0
-		if direct_direction.length() > _navigation_agent.target_desired_distance + 0.75:
-			direct_direction = _avoid_dynamic_obstacle(direct_direction.normalized())
-			velocity = direct_direction * speed
-			move_and_slide()
-			if direct_direction.length_squared() > 0.001:
-				look_at(global_position + direct_direction, Vector3.UP)
-			return
 	var direction := _navigation_agent.get_next_path_position() - global_position
 	direction.y = 0.0
 	if _navigation_agent.is_navigation_finished() or direction.length() <= _navigation_agent.target_desired_distance or direction.length_squared() < 0.01:
@@ -686,7 +685,8 @@ func _move_preview_item_toward(target: Vector3, speed: float, delta: float) -> v
 		move_and_slide()
 		return
 	direction = direction.normalized()
-	direction = _avoid_dynamic_obstacle(direction)
+	if _preview_item_encounter != &"book":
+		direction = _avoid_dynamic_obstacle(direction)
 	velocity = direction * speed
 	move_and_slide()
 	look_at(global_position + direction, Vector3.UP)
@@ -728,15 +728,11 @@ func _update_preview_item_encounter(delta: float) -> void:
 			if not is_instance_valid(_player_target):
 				return
 			var chase_target := _preview_clamp_to_encounter_room(_player_target.global_position)
-			var direction_to_player := chase_target - global_position
-			direction_to_player.y = 0.0
-			var distance_to_player := direction_to_player.length()
-			if distance_to_player > 1.1:
-				# The Book encounter ignores the library maze geometry by design.
-				var step := minf(preview_book_follow_speed * delta, distance_to_player - 1.1)
-				direction_to_player = direction_to_player.normalized()
-				global_position += direction_to_player * step
-				look_at(global_position + direction_to_player, Vector3.UP)
+			var distance_to_player := global_position.distance_to(chase_target)
+			if distance_to_player > 0.7:
+				# Follow the baked route through the shelf maze while collision is
+				# disabled for this encounter so the body cannot snag on shelf corners.
+				_move_preview_item_toward(chase_target, preview_book_follow_speed, delta)
 			else:
 				velocity = Vector3.ZERO
 				move_and_slide()
